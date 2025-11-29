@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DD CRM - User Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Sidebar Navigation -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <h1>DD CRM</h1>
+    </div>
+    
+    <div class="sidebar-nav">
+      <a href="#" class="sidebar-nav-item active">
+        <i class="fas fa-chart-line"></i>
+        <span>Dashboard</span>
+      </a>
+      <a href="#" class="sidebar-nav-item">
+        <i class="fas fa-address-book"></i>
+        <span>My Leads</span>
+      </a>
+      <a href="#" class="sidebar-nav-item">
+        <i class="fas fa-chart-bar"></i>
+        <span>Analytics</span>
+      </a>
+    </div>
+    
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">U</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name" id="user-name-sidebar">User</div>
+          <div class="sidebar-user-role">Sales Rep</div>
+        </div>
+      </div>
+      <button onclick="logout()" class="btn btn-secondary" style="width: 100%;">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </button>
+    </div>
+  </div>
+  
+  <!-- Top Header -->
+  <div class="top-header">
+    <div class="header-title">My Dashboard</div>
+    <div class="header-actions">
+      <span id="user-name" style="color: #6b7280; font-size: 13px; font-weight: 500;"></span>
+    </div>
+  </div>
+  
+  <div class="container with-header">
+    <div class="dashboard">
+      
+      <!-- Statistics -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h4>Total Leads</h4>
+          <p id="stat-total" class="stat-number">0</p>
+        </div>
+        <div class="stat-card">
+          <h4>New</h4>
+          <p id="stat-new" class="stat-number">0</p>
+        </div>
+        <div class="stat-card">
+          <h4>Hot</h4>
+          <p id="stat-hot" class="stat-number">0</p>
+        </div>
+        <div class="stat-card">
+          <h4>Closed Won</h4>
+          <p id="stat-closed" class="stat-number">0</p>
+        </div>
+      </div>
+      
+      <!-- Filters -->
+      <div class="card">
+        <h2>Filter Leads</h2>
+        <div class="filter-group">
+          <label for="filter-status">Status:</label>
+          <select id="filter-status">
+            <option value="">All Statuses</option>
+            <option value="New">New</option>
+            <option value="Prospect">Prospect</option>
+            <option value="Suspect">Suspect</option>
+            <option value="Cold">Cold</option>
+            <option value="Warm">Warm</option>
+            <option value="Hot">Hot</option>
+            <option value="Closed Won">Closed Won</option>
+            <option value="Closed Lost">Closed Lost</option>
+          </select>
+          
+          <input type="text" id="filter-search" placeholder="Search by name, email, or company...">
+        </div>
+      </div>
+      
+      <!-- Leads List -->
+      <div class="card">
+        <h2>My Leads</h2>
+        <div id="leads-container"></div>
+      </div>
+      
+    </div>
+  </div>
+  
+  <!-- Lead Detail Modal -->
+  <div id="lead-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      
+      <h2 id="modal-lead-name"></h2>
+      
+      <div class="lead-details">
+        <p><strong>Email:</strong> <span id="modal-lead-email"></span></p>
+        <p><strong>Phone:</strong> <span id="modal-lead-phone"></span></p>
+        <p><strong>Company:</strong> <span id="modal-lead-company"></span></p>
+        
+        <div class="form-group">
+          <label for="modal-lead-status">Status:</label>
+          <select id="modal-lead-status">
+            <option value="New">New</option>
+            <option value="Prospect">Prospect</option>
+            <option value="Suspect">Suspect</option>
+            <option value="Cold">Cold</option>
+            <option value="Warm">Warm</option>
+            <option value="Hot">Hot</option>
+            <option value="Closed Won">Closed Won</option>
+            <option value="Closed Lost">Closed Lost</option>
+          </select>
+          <button onclick="updateLeadStatus()" class="btn btn-primary">Update Status</button>
+        </div>
+      </div>
+      
+      <h3>Status History</h3>
+      <div id="status-history-container" class="notes-list"></div>
+      
+      <h3>Follow-up Notes</h3>
+      
+      <div class="form-group">
+        <textarea id="new-note" placeholder="Add a follow-up note..." rows="3"></textarea>
+        <button onclick="addNote()" class="btn btn-primary">Add Note</button>
+      </div>
+      
+      <div id="notes-container" class="notes-list"></div>
+      
+    </div>
+  </div>
+  
+  <script src="js/config.js"></script>
+  <script src="js/user.js"></script>
+</body>
+</html>
