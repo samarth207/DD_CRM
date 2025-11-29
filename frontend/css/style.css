@@ -330,6 +330,114 @@ body {
   transition: all 0.15s ease;
 }
 
+/* Modal Overlay */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(17,24,39,0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 60px;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 12px;
+  width: min(1200px, 94%);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 28px 30px 32px;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15), 0 4px 10px -2px rgba(0,0,0,0.08);
+  border: 1px solid #e5e7eb;
+  animation: fadeInUp 0.25s ease;
+}
+
+.status-modal-content { width: min(1400px, 96%); }
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  letter-spacing: -0.01em;
+}
+
+.modal-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.modal .close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  font-size: 26px;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.modal .close:hover { color: #4b5563; }
+
+.data-table.compact th, .data-table.compact td { padding: 8px 10px; }
+
+.data-table.compact th {
+  font-size: 11.5px;
+  letter-spacing: 0.5px;
+}
+
+.data-table.compact td { font-size: 12.5px; }
+
+.table-responsive { border-radius: 8px; }
+
+/* Elevate status badges inside modal */
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  background: #eef2ff;
+  color: #6366f1;
+}
+
+/* Lead Status Badges */
+.lead-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 14px;
+  letter-spacing: .3px;
+  line-height: 1;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.status-fresh { background: #e0f2fe; color: #0369a1; border-color:#bae6fd; }
+.status-buffer-fresh { background: #eff6ff; color: #1d4ed8; border-color:#dbeafe; }
+.status-did-not-pick { background: #f3f4f6; color: #374151; border-color:#e5e7eb; }
+.status-request-call-back { background: #f5f3ff; color: #6d28d9; border-color:#ddd6fe; }
+.status-follow-up { background: #fffbeb; color: #b45309; border-color:#fde68a; }
+.status-counselled { background: #ecfdf5; color: #047857; border-color:#d1fae5; }
+.status-interested-in-next-batch { background: #eef2ff; color: #4338ca; border-color:#c7d2fe; }
+.status-registration-fees-paid { background: #ecfdf5; color: #0f766e; border-color:#d1fae5; }
+.status-enrolled { background: #e9f5ec; color: #065f46; border-color:#c7e9d5; }
+.status-junk-not-interested { background: #fef2f2; color: #b91c1c; border-color:#fecaca; }
+.status-junk\/not-interested { background: #fef2f2; color: #b91c1c; border-color:#fecaca; }
+
+/* Hover emphasis inside tables */
+.data-table td .lead-status { transition: transform .15s ease; }
+.data-table tr:hover .lead-status { transform: scale(1.05); }
+
 .card:hover {
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
@@ -537,13 +645,16 @@ body {
 }
 
 .status-new { background: #dbeafe; color: #1e40af; }
-.status-prospect { background: #fed7aa; color: #c2410c; }
-.status-suspect { background: #e9d5ff; color: #7c3aed; }
-.status-cold { background: #bfdbfe; color: #1e40af; }
-.status-warm { background: #fef3c7; color: #d97706; }
-.status-hot { background: #fecaca; color: #dc2626; }
-.status-closed-won { background: #bbf7d0; color: #15803d; }
-.status-closed-lost { background: #fbcfe8; color: #be185d; }
+.status-fresh { background: #dbeafe; color: #1e40af; }
+.status-buffer-fresh { background: #e0f2fe; color: #075985; }
+.status-did-not-pick { background: #e5e7eb; color: #374151; }
+.status-request-call-back { background: #e9d5ff; color: #7c3aed; }
+.status-follow-up { background: #fef3c7; color: #d97706; }
+.status-counselled { background: #dcfce7; color: #166534; }
+.status-interested-in-next-batch { background: #ede9fe; color: #4c1d95; }
+.status-registration-fees-paid { background: #d1fae5; color: #065f46; }
+.status-enrolled { background: #bbf7d0; color: #15803d; }
+.status-junk-not-interested { background: #fbcfe8; color: #be185d; }
 
 .lead-info {
   display: grid;

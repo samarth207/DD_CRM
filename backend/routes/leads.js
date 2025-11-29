@@ -45,6 +45,17 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Lead not found' });
     }
     
+    const { status } = req.body;
+    if (status && status !== lead.status) {
+      lead.statusHistory = lead.statusHistory || [];
+      lead.statusHistory.push({
+        status,
+        changedAt: new Date(),
+        changedBy: req.userId
+      });
+      lead.status = status;
+    }
+    
     lead.lastContactDate = new Date();
     await lead.save();
     res.json(lead);

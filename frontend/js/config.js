@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = (typeof window !== 'undefined' && window.API_URL_OVERRIDE) ? window.API_URL_OVERRIDE : 'http://localhost:5000/api';
 
 function getToken() {
   return localStorage.getItem('token');

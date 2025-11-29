@@ -50,6 +50,9 @@ function showSection(section) {
     case 'dashboard':
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
+    case 'performance':
+      targetId = 'overall-performance-card';
+      break;
     case 'upload':
       targetId = 'upload-form';
       break;
@@ -326,7 +329,7 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
   
   try {
     const token = getToken();
-    const response = await fetch('http://localhost:5000/api/admin/upload-leads', {
+    const response = await fetch(`${API_URL}/admin/upload-leads`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -399,6 +402,26 @@ function displayUserProgress(data) {
   document.getElementById('total-leads').textContent = data.totalLeads;
   currentUserLeads = data.leads.slice();
   
+  // Calculate and display user performance metrics
+  const userLeads = data.leads;
+  
+  // Conversion rate
+  const enrolled = userLeads.filter(l => l.status === 'Enrolled').length;
+  const conversionRate = userLeads.length > 0 ? ((enrolled / userLeads.length) * 100).toFixed(1) : 0;
+  document.getElementById('user-conversion-rate').textContent = conversionRate + '%';
+  
+  // Average follow-ups
+  const totalFollowups = userLeads.reduce((sum, lead) => sum + (lead.statusHistory?.length || 0), 0);
+  const avgFollowups = userLeads.length > 0 ? (totalFollowups / userLeads.length).toFixed(1) : 0;
+  document.getElementById('user-avg-followups').textContent = avgFollowups;
+  
+  // Active leads
+  const activeLeads = userLeads.filter(l => 
+    l.status !== 'Enrolled' && 
+    l.status !== 'Junk/not interested'
+  ).length;
+  document.getElementById('user-active-leads').textContent = activeLeads;
+  
   // Display status breakdown
   const statusBreakdown = document.getElementById('status-breakdown');
   statusBreakdown.innerHTML = '';
@@ -423,13 +446,15 @@ function displayUserProgress(data) {
   data.leads.forEach(lead => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="clickable" data-lead-id="${lead.id}">${lead.name}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.company || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.phone}</td>
-      <td class="clickable" data-lead-id="${lead.id}"><span class="lead-status status-${lead.status.toLowerCase().replace(' ', '-')}">${lead.status}</span></td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.notesCount}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.statusChanges || 0}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${new Date(lead.updatedAt).toLocaleDateString()}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.name || ''}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.contact || ''}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.email || ''}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.city || 'N/A'}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.university || 'N/A'}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.course || 'N/A'}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.profession || 'N/A'}</td>
+      <td class="clickable" data-lead-id="${lead.id}"><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -484,6 +509,30 @@ async function loadOverallStats() {
       
       // Create user leads chart
       createUserLeadsChart(data.userStats);
+      
+      // Calculate and display overall performance metrics
+      const allLeadsResponse = await apiCall('/admin/all-leads');
+      const allLeadsData = await allLeadsResponse.json();
+      if (allLeadsResponse.ok && allLeadsData.leads) {
+        const allLeads = allLeadsData.leads;
+        
+        // Conversion rate
+        const enrolled = allLeads.filter(l => l.status === 'Enrolled').length;
+        const conversionRate = allLeads.length > 0 ? ((enrolled / allLeads.length) * 100).toFixed(1) : 0;
+        document.getElementById('overall-conversion-rate').textContent = conversionRate + '%';
+        
+        // Average follow-ups
+        const totalFollowups = allLeads.reduce((sum, lead) => sum + (lead.statusHistory?.length || 0), 0);
+        const avgFollowups = allLeads.length > 0 ? (totalFollowups / allLeads.length).toFixed(1) : 0;
+        document.getElementById('overall-avg-followups').textContent = avgFollowups;
+        
+        // Active leads
+        const activeLeads = allLeads.filter(l => 
+          l.status !== 'Enrolled' && 
+          l.status !== 'Junk/not interested'
+        ).length;
+        document.getElementById('overall-active-leads').textContent = activeLeads;
+      }
     }
   } catch (error) {
     console.error('Error loading overall stats:', error);
@@ -498,14 +547,16 @@ function createOverallStatusChart(statusBreakdown) {
   const data = Object.values(statusBreakdown);
   
   const colors = {
-    'New': '#0066cc',
-    'Prospect': '#e65100',
-    'Suspect': '#7b1fa2',
-    'Cold': '#1976d2',
-    'Warm': '#f57f17',
-    'Hot': '#c62828',
-    'Closed Won': '#2e7d32',
-    'Closed Lost': '#c2185b'
+    'Fresh': '#0066cc',
+    'Buffer fresh': '#60a5fa',
+    'Did not pick': '#9ca3af',
+    'Request call back': '#8b5cf6',
+    'Follow up': '#f59e0b',
+    'Counselled': '#22c55e',
+    'Interested in next batch': '#6366f1',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#2e7d32',
+    'Junk/not interested': '#c2185b'
   };
   
   const backgroundColors = labels.map(label => colors[label] || '#667eea');
@@ -548,6 +599,64 @@ function createOverallStatusChart(statusBreakdown) {
       }
     }
   });
+}
+
+// Show modal listing leads for a given status (modern schema fields)
+async function showStatusLeadsModal(status) {
+  try {
+    const modal = document.getElementById('status-leads-modal');
+    if (!modal) return;
+    // Fetch all leads once (could be optimized server-side with a query param)
+    const response = await apiCall('/admin/all-leads');
+    const data = await response.json();
+    if (!response.ok) return;
+    const leads = data.leads.filter(l => l.status === status);
+
+    // Populate header info
+    document.getElementById('status-leads-title').textContent = `${status} Leads`;
+    document.getElementById('status-leads-count').textContent = `${leads.length} lead${leads.length !== 1 ? 's' : ''} with status "${status}"`;
+
+    const tbody = document.getElementById('status-leads-tbody');
+    tbody.innerHTML = '';
+    leads.forEach(lead => {
+      const tr = document.createElement('tr');
+      tr.className = 'status-lead-row';
+      tr.innerHTML = `
+        <td>${lead.name || ''}</td>
+        <td>${lead.contact || ''}</td>
+        <td>${lead.email || ''}</td>
+        <td>${lead.city || ''}</td>
+        <td>${lead.university || ''}</td>
+        <td>${lead.course || ''}</td>
+        <td>${lead.profession || ''}</td>
+        <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status}</span></td>
+        <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
+        <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
+      tr.addEventListener('click', () => {
+        // Close status modal before opening lead modal to avoid layering issues
+        closeStatusLeadsModal();
+        openLeadModal(lead._id || lead.id); // handle either key
+      });
+      tbody.appendChild(tr);
+    });
+
+    // Prevent background scroll while modal open
+    document.body.style.overflow = 'hidden';
+    modal.style.display = 'flex';
+    // Close when clicking backdrop
+    modal.onclick = () => { closeStatusLeadsModal(); };
+  } catch (err) {
+    console.error('Error showing status leads modal', err);
+  }
+}
+
+function closeStatusLeadsModal() {
+  const modal = document.getElementById('status-leads-modal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  // Remove backdrop click listener to avoid leaks
+  modal.onclick = null;
 }
 
 async function showUsersForStatus(status) {
@@ -638,14 +747,16 @@ function updateStatusChart(statusBreakdown) {
   
   // Color palette for different statuses
   const colors = {
-    'New': '#0066cc',
-    'Prospect': '#e65100',
-    'Suspect': '#7b1fa2',
-    'Cold': '#1976d2',
-    'Warm': '#f57f17',
-    'Hot': '#c62828',
-    'Closed Won': '#2e7d32',
-    'Closed Lost': '#c2185b'
+    'Fresh': '#0369a1',
+    'Buffer fresh': '#1d4ed8',
+    'Did not pick': '#374151',
+    'Request call back': '#6d28d9',
+    'Follow up': '#b45309',
+    'Counselled': '#047857',
+    'Interested in next batch': '#4338ca',
+    'Registration fees paid': '#0f766e',
+    'Enrolled': '#065f46',
+    'Junk/not interested': '#b91c1c'
   };
   
   const backgroundColors = labels.map(label => colors[label] || '#667eea');
@@ -702,9 +813,12 @@ async function openLeadModal(leadId) {
     const data = await response.json();
     if (!response.ok) return;
     document.getElementById('admin-modal-lead-name').textContent = data.name;
-    document.getElementById('admin-modal-lead-email').textContent = data.email;
-    document.getElementById('admin-modal-lead-phone').textContent = data.phone;
-    document.getElementById('admin-modal-lead-company').textContent = data.company || 'N/A';
+    document.getElementById('admin-modal-lead-contact').textContent = data.contact || 'N/A';
+    document.getElementById('admin-modal-lead-email').textContent = data.email || 'N/A';
+    document.getElementById('admin-modal-lead-city').textContent = data.city || 'N/A';
+    document.getElementById('admin-modal-lead-university').textContent = data.university || 'N/A';
+    document.getElementById('admin-modal-lead-course').textContent = data.course || 'N/A';
+    document.getElementById('admin-modal-lead-profession').textContent = data.profession || 'N/A';
     document.getElementById('admin-modal-lead-status').textContent = data.status;
 
     // Status history
@@ -958,14 +1072,17 @@ async function performGlobalSearch(query) {
       emptyDiv.style.display = 'none';
       data.results.forEach(lead => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.name}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.email}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.phone}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.company || 'N/A'}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.status}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.notesCount}</td>
-          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${new Date(lead.updatedAt).toLocaleDateString()}</td>`;
+        tr.innerHTML = `<td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.name || ''}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.contact || ''}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.email || ''}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.city || 'N/A'}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.university || 'N/A'}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.course || 'N/A'}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.profession || 'N/A'}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\"><span class=\"lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}\">${lead.status || ''}</span></td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.assignedTo ? (lead.assignedTo.name || 'Unassigned') : 'Unassigned'}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.notesCount || 0}</td>
+          <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
         tbody.appendChild(tr);
       });
       tbody.querySelectorAll('.clickable').forEach(cell => {
@@ -991,21 +1108,26 @@ if (userLeadSearchInput) {
     tbody.innerHTML = '';
     const filtered = !q ? currentUserLeads : currentUserLeads.filter(l => (
       (l.name && l.name.toLowerCase().includes(q)) ||
+      (l.contact && String(l.contact).toLowerCase().includes(q)) ||
       (l.email && l.email.toLowerCase().includes(q)) ||
-      (l.phone && l.phone.toLowerCase().includes(q)) ||
-      (l.company && l.company.toLowerCase().includes(q)) ||
+      (l.city && l.city.toLowerCase().includes(q)) ||
+      (l.university && l.university.toLowerCase().includes(q)) ||
+      (l.course && l.course.toLowerCase().includes(q)) ||
+      (l.profession && l.profession.toLowerCase().includes(q)) ||
       (l.status && l.status.toLowerCase().includes(q))
     ));
     filtered.forEach(lead => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.name}</td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.company || 'N/A'}</td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.phone}</td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\"><span class=\"lead-status status-${lead.status.toLowerCase().replace(' ', '-')}\">${lead.status}</span></td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.notesCount}</td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.statusChanges || 0}</td>
-        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${new Date(lead.updatedAt).toLocaleDateString()}</td>`;
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.name || ''}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.contact || ''}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.email || ''}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.city || 'N/A'}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.university || 'N/A'}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.course || 'N/A'}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.profession || 'N/A'}</td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\"><span class=\"lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}\">${lead.status || ''}</span></td>
+        <td class=\"clickable\" data-lead-id=\"${lead.id}\">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll('.clickable').forEach(cell => {
@@ -1021,6 +1143,23 @@ function closeAdminLeadModal() {
   document.getElementById('admin-lead-modal').style.display = 'none';
   currentLeadId = null;
 }
+
+// Global escape key handler for all modals
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    // Close admin lead modal
+    const adminLeadModal = document.getElementById('admin-lead-modal');
+    if (adminLeadModal && adminLeadModal.style.display === 'flex') {
+      closeAdminLeadModal();
+    }
+    
+    // Close status leads modal
+    const statusLeadsModal = document.getElementById('status-leads-modal');
+    if (statusLeadsModal && statusLeadsModal.style.display === 'flex') {
+      closeStatusLeadsModal();
+    }
+  }
+});
 
 async function transferLead() {
   if (!currentLeadId) return;
@@ -1084,52 +1223,7 @@ if (adminLeadModal) {
   });
 }
 
-// Status Leads Modal logic
-async function showStatusLeadsModal(status) {
-  try {
-    const response = await apiCall('/admin/all-leads');
-    const data = await response.json();
-    if (!response.ok) return;
-    const leads = data.leads.filter(l => l.status === status);
-    const modal = document.getElementById('status-leads-modal');
-    if (!modal) return;
-    document.getElementById('status-leads-title').textContent = `${status} Leads`;
-    document.getElementById('status-leads-count').textContent = `Total: ${leads.length}`;
-    const tbody = document.getElementById('status-leads-tbody');
-    tbody.innerHTML = '';
-    leads.forEach(l => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class=\"clickable\" data-lead-id=\"${l._id}\">${l.name}</td>
-        <td class=\"clickable\" data-lead-id=\"${l._id}\">${l.email}</td>
-        <td class=\"clickable\" data-lead-id=\"${l._id}\">${l.phone}</td>
-        <td class=\"clickable\" data-lead-id=\"${l._id}\">${l.company || 'N/A'}</td>
-        <td class=\"clickable\" data-lead-id=\"${l._id}\">${l.status}</td>
-        <td class=\"clickable\" data-lead-id=\"${l._id}\">${l.assignedTo?.name || 'Unassigned'}</td>`;
-      tbody.appendChild(tr);
-    });
-    tbody.querySelectorAll('.clickable').forEach(cell => {
-      cell.addEventListener('click', () => {
-        const leadId = cell.getAttribute('data-lead-id');
-        openLeadModal(leadId);
-      });
-    });
-    modal.style.display = 'flex';
-  } catch (err) {
-    console.error('Error showing status leads modal', err);
-  }
-}
-
-function closeStatusLeadsModal() {
-  const modal = document.getElementById('status-leads-modal');
-  if (modal) modal.style.display = 'none';
-}
-
-const statusLeadsModal = document.getElementById('status-leads-modal');
-if (statusLeadsModal) {
-  statusLeadsModal.addEventListener('click', (e) => {
-    if (e.target.id === 'status-leads-modal') closeStatusLeadsModal();
-  });
-}
+// (Removed duplicate outdated showStatusLeadsModal & closeStatusLeadsModal definitions using legacy fields)
 
 // Collapsible Manage Users
 function toggleManageUsers() {
