@@ -1,0 +1,15 @@
+# Add Node to PATH for current session
+$env:PATH = "C:\Program Files\nodejs;" + $env:PATH
+
+# Seed users
+& "C:\Program Files\nodejs\node.exe" backend\seedUsers.js
+
+# Start server (detached)
+Start-Process -FilePath "C:\Program Files\nodejs\node.exe" -ArgumentList "backend/server.js" -WindowStyle Hidden
+
+# Check health
+Invoke-WebRequest -UseBasicParsing http://localhost:5000/api/health | Select-Object -ExpandProperty Content
+
+
+# I'll stop all Node processes for you.
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force

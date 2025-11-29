@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DD CRM - Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Sidebar Navigation -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <h1>DD CRM</h1>
+    </div>
+    
+    <div class="sidebar-nav">
+      <a href="#" class="sidebar-nav-item active" data-section="dashboard">
+        <i class="fas fa-chart-line"></i>
+        <span>Dashboard</span>
+      </a>
+      <a href="#" class="sidebar-nav-item" data-section="upload">
+        <i class="fas fa-upload"></i>
+        <span>Upload Leads</span>
+      </a>
+      <a href="#" class="sidebar-nav-item" data-section="users">
+        <i class="fas fa-users"></i>
+        <span>Manage Users</span>
+      </a>
+      <a href="#" class="sidebar-nav-item" data-section="progress">
+        <i class="fas fa-chart-bar"></i>
+        <span>User Progress</span>
+      </a>
+      <a href="#" class="sidebar-nav-item" data-section="settings">
+        <i class="fas fa-cog"></i>
+        <span>Settings</span>
+      </a>
+    </div>
+    
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">A</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name" id="admin-name-sidebar">Admin</div>
+          <div class="sidebar-user-role">Administrator</div>
+        </div>
+      </div>
+      <button onclick="logout()" class="btn btn-secondary" style="width: 100%;">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </button>
+    </div>
+  </div>
+  
+  <!-- Top Header -->
+  <div class="top-header">
+    <div class="header-title">Admin Dashboard</div>
+    <div class="header-actions">
+      <span id="admin-name" style="color: #6b7280; font-size: 13px; font-weight: 500;"></span>
+    </div>
+  </div>
+  
+  <div class="container with-header">
+    <div class="dashboard">
+      
+      <!-- Overall Dashboard Section -->
+      <div class="card">
+        <h2 class="collapsible-header" onclick="toggleOverallDashboard()">
+          Overall Dashboard
+          <span id="overall-dashboard-toggle" class="collapse-icon">−</span>
+        </h2>
+        <div id="overall-dashboard-body">
+        <!-- Global Lead Search -->
+        <div class="form-group" style="margin-bottom:12px;">
+          <input type="text" id="global-lead-search" placeholder="Search leads by name, email, phone, company, or status..." autocomplete="off">
+        </div>
+        <div id="global-search-results" style="display:none; margin-top:10px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Company</th>
+                <th>Status</th>
+                <th>Assigned To</th>
+                <th>Notes</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="global-search-tbody"></tbody>
+          </table>
+          <div id="global-search-empty" style="display:none; padding:12px; color:#6b7280; text-align:center; font-size:13px;">No matching leads found.</div>
+        </div>
+        <button onclick="loadOverallStats()" class="btn btn-primary" style="margin-bottom: 16px;">
+          <i class="fas fa-sync-alt"></i> Load Statistics
+        </button>
+        
+        <div id="overall-stats-container" style="display: none;">
+        <div id="overall-stats">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <h4>Total Users</h4>
+              <p id="overall-total-users" class="stat-number">0</p>
+            </div>
+            <div class="stat-card">
+              <h4>Total Leads</h4>
+              <p id="overall-total-leads" class="stat-number">0</p>
+            </div>
+          </div>
+          
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 12px 0;">
+            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Overall Status Distribution</h3>
+            <canvas id="overallStatusChart" style="max-height: 300px;"></canvas>
+          </div>
+          
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 12px 0;">
+            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Leads by User</h3>
+            <canvas id="userLeadsChart" style="max-height: 300px;"></canvas>
+          </div>
+        </div>
+        </div>
+      </div>
+      
+      <!-- Upload Leads Section -->
+      <div class="card">
+        <h2>Upload Leads</h2>
+        <form id="upload-form" enctype="multipart/form-data">
+          <div class="form-group">
+            <label>Assign to Users</label>
+            <div class="multi-select" id="user-multiselect">
+              <div class="multi-select-toggle" id="user-multiselect-toggle">Select users...</div>
+              <div class="multi-select-dropdown" id="user-multiselect-dropdown" style="display:none;"></div>
+            </div>
+            <small style="color: #9ca3af; display: block; margin-top: 4px; font-size: 12px;">Select one or more users. Leads will be distributed equally.</small>
+          </div>
+          
+          <div class="form-group">
+            <label for="file-upload">Excel File</label>
+            <input type="file" id="file-upload" name="file" accept=".xlsx,.xls" required>
+          </div>
+          
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-upload"></i> Upload Leads
+          </button>
+        </form>
+        
+        <div id="upload-message" class="message" style="display: none;"></div>
+        <div id="upload-distribution" class="info-box" style="display:none; margin-top:12px;"></div>
+        
+        <div class="info-box">
+          <h4>Required Excel Columns:</h4>
+          <p style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Your Excel file should include:</p>
+          <ul>
+            <li>Name</li>
+            <li>Email</li>
+            <li>Phone</li>
+            <li>Company (optional)</li>
+            <li>Status (optional)</li>
+            <li>Notes (optional)</li>
+          </ul>
+        </div>
+      </div>
+      
+      <!-- Create User Section -->
+      <div class="card">
+        <h2 class="collapsible-header" onclick="toggleCreateUser()">
+          Create New User
+          <span id="create-user-toggle" class="collapse-icon">+</span>
+        </h2>
+        <div id="create-user-body" style="display:none;">
+        <form id="create-user-form">
+          <div class="form-group">
+            <label for="new-user-name">Name</label>
+            <input type="text" id="new-user-name" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="new-user-email">Email</label>
+            <input type="email" id="new-user-email" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="new-user-password">Password</label>
+            <input type="password" id="new-user-password" required>
+          </div>
+          
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-user-plus"></i> Create User
+          </button>
+        </form>
+        
+        <div id="create-user-message" class="message" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Admin Password Reset Section -->
+      <div class="card">
+        <h2 class="collapsible-header" onclick="toggleAdminPassword()">
+          Reset Admin Password
+          <span id="admin-password-toggle" class="collapse-icon">+</span>
+        </h2>
+        <div id="admin-password-body" style="display:none;">
+        <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">Change your admin account password.</p>
+        <form id="admin-password-form">
+          <div class="form-group">
+            <label for="admin-new-password">New Password</label>
+            <input type="password" id="admin-new-password" placeholder="Minimum 8 characters" required>
+          </div>
+          
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-key"></i> Reset My Password
+          </button>
+        </form>
+        
+        <div id="admin-password-message" class="message" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Manage Users Section (Collapsible) -->
+      <div class="card" id="manage-users-card">
+        <h2 class="collapsible-header" onclick="toggleManageUsers()">
+          Manage Users
+          <span id="manage-users-toggle" class="collapse-icon">+</span>
+        </h2>
+        <div id="manage-users-body" style="display:none;">
+          <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">View user details, lead counts, reset passwords, and remove users without assigned leads.</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Leads</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+          <div id="users-message" class="message" style="display:none; margin-top:12px;"></div>
+        </div>
+      </div>
+      
+      <!-- User Progress Section -->
+      <div class="card">
+        <h2 class="collapsible-header" onclick="toggleUserProgress()">
+          User Progress
+          <span id="user-progress-toggle" class="collapse-icon">+</span>
+        </h2>
+        <div id="user-progress-body" style="display:none;">
+        <div class="form-group">
+          <label for="user-lead-search">Filter This User's Leads</label>
+          <input type="text" id="user-lead-search" placeholder="Search within user's leads..." autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="progress-user-select">Select User</label>
+          <select id="progress-user-select">
+            <option value="">Select a user...</option>
+          </select>
+        </div>
+        
+        <div id="user-progress" style="display: none;">
+          <h3 id="progress-user-name" style="color: #111827; font-size: 15px; margin-bottom: 16px;"></h3>
+          
+          <!-- Status Chart -->
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 16px;">
+            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Lead Status Distribution</h3>
+            <canvas id="statusChart" style="max-height: 300px;"></canvas>
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <h4>Total Leads</h4>
+              <p id="total-leads" class="stat-number">0</p>
+            </div>
+          </div>
+          
+          <div id="status-breakdown" class="status-grid"></div>
+          
+          <h3>Recent Leads</h3>
+          <div id="leads-table-container">
+            <table id="leads-table" class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Status Changes</th>
+                  <th>Last Updated</th>
+                </tr>
+              </thead>
+            <tbody id="leads-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>  <!-- Lead Detail Modal -->
+  <div id="admin-lead-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeAdminLeadModal()">&times;</span>
+      <h2 id="admin-modal-lead-name"></h2>
+      <div class="lead-details">
+        <p><strong>Email:</strong> <span id="admin-modal-lead-email"></span></p>
+        <p><strong>Phone:</strong> <span id="admin-modal-lead-phone"></span></p>
+        <p><strong>Company:</strong> <span id="admin-modal-lead-company"></span></p>
+        <p><strong>Current Status:</strong> <span id="admin-modal-lead-status"></span></p>
+      </div>
+      <h3>Status History</h3>
+      <div id="admin-status-history" class="notes-list"></div>
+      <h3>Assignment History</h3>
+      <div id="admin-assignment-history" class="notes-list"></div>
+      <h3>Notes</h3>
+      <div id="admin-lead-notes" class="notes-list"></div>
+      <h3>Transfer Lead</h3>
+      <div class="form-group">
+        <label for="transfer-user-select">Select New User</label>
+        <select id="transfer-user-select"></select>
+      </div>
+      <button onclick="transferLead()" class="btn btn-primary">Transfer Lead</button>
+      <button onclick="deleteLead()" class="btn btn-danger" style="margin-left:10px;">Delete Lead</button>
+      <div id="transfer-message" class="message" style="display: none; margin-top: 10px;"></div>
+    </div>
+  </div>
+  <!-- Status Leads Modal -->
+  <div id="status-leads-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeStatusLeadsModal()">&times;</span>
+      <h2 id="status-leads-title"></h2>
+      <div id="status-leads-count" style="margin-bottom:10px;"></div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Company</th>
+              <th>Status</th>
+              <th>Assigned To</th>
+            </tr>
+          </thead>
+          <tbody id="status-leads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- User Detail Modal -->
+  <div id="user-detail-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <span class="close" onclick="closeUserDetailModal()">&times;</span>
+      <h2 id="user-detail-name"></h2>
+      <div class="lead-details">
+        <p><strong>Email:</strong> <span id="user-detail-email"></span></p>
+        <p><strong>Role:</strong> <span id="user-detail-role"></span></p>
+        <p><strong>Created:</strong> <span id="user-detail-created"></span></p>
+        <p><strong>Lead Count:</strong> <span id="user-detail-leads"></span></p>
+      </div>
+      <div class="info-box" style="margin-top:15px;">
+        <h4>Password Reset</h4>
+        <p style="margin-bottom:10px;">Set a new password for this user. Minimum 8 characters.</p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label for="reset-password-input">New Password</label>
+          <input type="password" id="reset-password-input" placeholder="Enter new password">
+        </div>
+        <button class="btn btn-primary" onclick="resetUserPassword()">Reset Password</button>
+        <div id="user-detail-reset-message" class="message" style="display:none; margin-top:12px;"></div>
+        <p style="margin-top:15px; font-size:12px; color:#555;">Passwords are stored hashed; previous password cannot be retrieved.</p>
+      </div>
+      <div class="info-box" style="margin-top:15px;" id="admin-password-reset-section" style="display:none;">
+        <h4>Reset Admin Password</h4>
+        <p style="margin-bottom:10px;">Reset your own admin password. Minimum 8 characters.</p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label for="admin-reset-password-input">New Admin Password</label>
+          <input type="password" id="admin-reset-password-input" placeholder="Enter new admin password">
+        </div>
+        <button class="btn btn-primary" onclick="resetAdminPassword()">Reset My Password</button>
+        <div id="admin-reset-message" class="message" style="display:none; margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="js/config.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
