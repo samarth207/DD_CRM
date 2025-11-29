@@ -68,14 +68,14 @@ router.post('/upload-leads', auth, adminAuth, upload.single('file'), async (req,
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
-    // Preload existing leads keyed by normalized email or phone
-    const allExistingLeads = await Lead.find({}, 'email phone');
+    // Preload existing leads keyed by normalized email or contact
+    const allExistingLeads = await Lead.find({}, 'email contact');
     const existingMap = new Map();
     allExistingLeads.forEach(l => {
       const keyEmail = l.email ? l.email.trim().toLowerCase() : null;
-      const keyPhone = l.phone ? l.phone.replace(/\D/g, '') : null;
+      const keyContact = l.contact ? String(l.contact).replace(/\D/g, '') : null;
       if (keyEmail) existingMap.set(`E:${keyEmail}`, true);
-      if (keyPhone) existingMap.set(`P:${keyPhone}`, true);
+      if (keyContact) existingMap.set(`C:${keyContact}`, true);
     });
 
     const newLeads = [];
@@ -83,41 +83,44 @@ router.post('/upload-leads', auth, adminAuth, upload.single('file'), async (req,
 
     data.forEach((row, index) => {
       const rawEmail = row.Email || row.email || '';
-      const rawPhone = row.Phone || row.phone || '';
+      const rawContact = row.Contact || row.contact || '';
       const normEmail = rawEmail.trim().toLowerCase();
-      const normPhone = rawPhone.replace(/\D/g, '');
+      const normContact = typeof rawContact === 'string' ? rawContact.replace(/\D/g, '') : String(rawContact || '').replace(/\D/g, '');
 
       const emailKey = normEmail ? `E:${normEmail}` : null;
-      const phoneKey = normPhone ? `P:${normPhone}` : null;
+      const contactKey = normContact ? `C:${normContact}` : null;
 
       let isDuplicate = false;
       if (emailKey && existingMap.has(emailKey)) isDuplicate = true;
-      else if (phoneKey && existingMap.has(phoneKey)) isDuplicate = true;
+      else if (contactKey && existingMap.has(contactKey)) isDuplicate = true;
 
       if (isDuplicate) {
-        duplicates.push({ email: normEmail || null, phone: normPhone || null });
+        duplicates.push({ email: normEmail || null, contact: normContact || null });
         return; // skip adding duplicate
       }
 
       // Mark these identifiers so subsequent rows in same upload are also treated as duplicates
       if (emailKey) existingMap.set(emailKey, true);
-      if (phoneKey) existingMap.set(phoneKey, true);
+      if (contactKey) existingMap.set(contactKey, true);
 
       const assignedUserId = userIds[index % userIds.length];
 
       newLeads.push(new Lead({
         name: row.Name || row.name || 'Unknown',
+        contact: rawContact,
         email: rawEmail,
-        phone: rawPhone,
-        company: row.Company || row.company || '',
-        status: row.Status || row.status || 'New',
+        city: row.City || row.city || '',
+        university: row.University || row.university || '',
+        course: row.Course || row.course || '',
+        profession: row.Profession || row.profession || row.Profassion || row.profassion || '',
+        status: row.Status || row.status || 'Fresh',
         assignedTo: assignedUserId,
         notes: (row.Notes || row.notes) ? [{
           content: row.Notes || row.notes,
           createdBy: req.userId
         }] : [],
         statusHistory: [{
-          status: row.Status || row.status || 'New',
+          status: row.Status || row.status || 'Fresh',
           changedBy: req.userId,
           changedAt: new Date()
         }],
@@ -232,9 +235,12 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
       leads: leads.map(lead => ({
         id: lead._id,
         name: lead.name,
+        contact: lead.contact,
         email: lead.email,
-        phone: lead.phone,
-        company: lead.company,
+        city: lead.city,
+        university: lead.university,
+        course: lead.course,
+        profession: lead.profession,
         status: lead.status,
         notesCount: lead.notes.length,
         recentNote: lead.notes.length ? lead.notes[lead.notes.length - 1].content : null,
@@ -265,8 +271,8 @@ router.get('/all-leads', auth, adminAuth, async (req, res) => {
       // Count by status
       stats.byStatus[lead.status] = (stats.byStatus[lead.status] || 0) + 1;
       
-      // Count by user
-      const userName = lead.assignedTo.name;
+      // Count by user (guard against missing assignment)
+      const userName = lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned';
       stats.byUser[userName] = (stats.byUser[userName] || 0) + 1;
     });
 
@@ -292,7 +298,7 @@ router.get('/overall-stats', auth, adminAuth, async (req, res) => {
 
     // Calculate per-user stats
     users.forEach(user => {
-      const userLeads = leads.filter(lead => lead.assignedTo._id.toString() === user._id.toString());
+      const userLeads = leads.filter(lead => lead.assignedTo && lead.assignedTo._id && lead.assignedTo._id.toString() === user._id.toString());
       const userStatusBreakdown = {};
       
       userLeads.forEach(lead => {
@@ -328,9 +334,12 @@ router.get('/lead/:id', auth, adminAuth, async (req, res) => {
     res.json({
       id: lead._id,
       name: lead.name,
+      contact: lead.contact,
       email: lead.email,
-      phone: lead.phone,
-      company: lead.company,
+      city: lead.city,
+      university: lead.university,
+      course: lead.course,
+      profession: lead.profession,
       status: lead.status,
       notes: lead.notes,
       statusHistory: lead.statusHistory,
@@ -500,9 +509,12 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
     const query = {
       $or: [
         { name: rx },
+        { contact: rx },
         { email: rx },
-        { phone: rx },
-        { company: rx },
+        { city: rx },
+        { university: rx },
+        { course: rx },
+        { profession: rx },
         { status: rx }
       ]
     };
@@ -513,9 +525,12 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
     const results = leads.map(l => ({
       id: l._id,
       name: l.name,
+      contact: l.contact,
       email: l.email,
-      phone: l.phone,
-      company: l.company,
+      city: l.city,
+      university: l.university,
+      course: l.course,
+      profession: l.profession,
       status: l.status,
       assignedTo: l.assignedTo ? { id: l.assignedTo._id, name: l.assignedTo.name, email: l.assignedTo.email } : null,
       updatedAt: l.updatedAt,

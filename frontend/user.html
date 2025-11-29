@@ -18,15 +18,15 @@
     </div>
     
     <div class="sidebar-nav">
-      <a href="#" class="sidebar-nav-item active">
+      <a href="#" class="sidebar-nav-item active" data-section="dashboard">
         <i class="fas fa-chart-line"></i>
         <span>Dashboard</span>
       </a>
-      <a href="#" class="sidebar-nav-item">
+      <a href="#" class="sidebar-nav-item" data-section="leads">
         <i class="fas fa-address-book"></i>
         <span>My Leads</span>
       </a>
-      <a href="#" class="sidebar-nav-item">
+      <a href="#" class="sidebar-nav-item" data-section="analytics">
         <i class="fas fa-chart-bar"></i>
         <span>Analytics</span>
       </a>
@@ -48,7 +48,10 @@
   
   <!-- Top Header -->
   <div class="top-header">
-    <div class="header-title">My Dashboard</div>
+    <div class="header-title">
+      <i class="fas fa-user-circle" style="margin-right: 8px; color: #6366f1;"></i>
+      My Leads Dashboard
+    </div>
     <div class="header-actions">
       <span id="user-name" style="color: #6b7280; font-size: 13px; font-weight: 500;"></span>
     </div>
@@ -57,57 +60,147 @@
   <div class="container with-header">
     <div class="dashboard">
       
-      <!-- Statistics -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <h4>Total Leads</h4>
-          <p id="stat-total" class="stat-number">0</p>
+      <!-- Quick Stats Overview -->
+      <div id="dashboard-section">
+        <div class="stats-grid" style="margin-bottom: 24px;">
+          <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <h4 style="color: rgba(255,255,255,0.9);">Total Leads</h4>
+            <p id="stat-total" class="stat-number" style="color: white;">0</p>
+            <small style="opacity: 0.9;">All assigned leads</small>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%); color: white;">
+            <h4 style="color: rgba(255,255,255,0.9);">Fresh Leads</h4>
+            <p id="stat-new" class="stat-number" style="color: white;">0</p>
+            <small style="opacity: 0.9;">Pending first contact</small>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #b45309 0%, #d97706 100%); color: white;">
+            <h4 style="color: rgba(255,255,255,0.9);">Follow-ups</h4>
+            <p id="stat-hot" class="stat-number" style="color: white;">0</p>
+            <small style="opacity: 0.9;">Requires attention</small>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #047857 0%, #10b981 100%); color: white;">
+            <h4 style="color: rgba(255,255,255,0.9);">Enrolled</h4>
+            <p id="stat-closed" class="stat-number" style="color: white;">0</p>
+            <small style="opacity: 0.9;">Successfully closed</small>
+          </div>
         </div>
-        <div class="stat-card">
-          <h4>New</h4>
-          <p id="stat-new" class="stat-number">0</p>
+      </div>
+
+      <!-- Quick Actions & Recent Activity -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+        <div class="card">
+          <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+            <i class="fas fa-clock" style="color: #6366f1;"></i>
+            Recent Activity
+          </h3>
+          <div id="recent-activity-dashboard" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto;">
+            <p style="color: #9ca3af; font-size: 14px; text-align: center; padding: 20px 0;">No recent activity</p>
+          </div>
         </div>
-        <div class="stat-card">
-          <h4>Hot</h4>
-          <p id="stat-hot" class="stat-number">0</p>
-        </div>
-        <div class="stat-card">
-          <h4>Closed Won</h4>
-          <p id="stat-closed" class="stat-number">0</p>
+        
+        <div class="card">
+          <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+            <i class="fas fa-filter" style="color: #6366f1;"></i>
+            Quick Filters
+          </h3>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <button onclick="quickFilter('Fresh')" class="btn btn-secondary" style="justify-content: flex-start;">
+              <i class="fas fa-star"></i> Fresh Leads
+            </button>
+            <button onclick="quickFilter('Follow up')" class="btn btn-secondary" style="justify-content: flex-start;">
+              <i class="fas fa-phone"></i> Follow-ups
+            </button>
+            <button onclick="quickFilter('Request call back')" class="btn btn-secondary" style="justify-content: flex-start;">
+              <i class="fas fa-phone-volume"></i> Callbacks
+            </button>
+            <button onclick="quickFilter('Did not pick')" class="btn btn-secondary" style="justify-content: flex-start;">
+              <i class="fas fa-phone-slash"></i> Not Answered
+            </button>
+            <button onclick="quickFilter('')" class="btn btn-primary" style="justify-content: flex-start;">
+              <i class="fas fa-list"></i> View All Leads
+            </button>
+          </div>
         </div>
       </div>
       
-      <!-- Filters -->
-      <div class="card">
-        <h2>Filter Leads</h2>
-        <div class="filter-group">
-          <label for="filter-status">Status:</label>
-          <select id="filter-status">
+      <!-- Search & Filter Bar -->
+      <div class="card" style="margin-bottom: 16px;">
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 250px; position: relative;">
+            <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af;"></i>
+            <input type="text" id="filter-search" placeholder="Search by name, email, city, university, course..." style="width: 100%; padding: 10px 12px 10px 36px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;">
+          </div>
+          <select id="filter-status" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px; min-width: 180px;">
             <option value="">All Statuses</option>
-            <option value="New">New</option>
-            <option value="Prospect">Prospect</option>
-            <option value="Suspect">Suspect</option>
-            <option value="Cold">Cold</option>
-            <option value="Warm">Warm</option>
-            <option value="Hot">Hot</option>
-            <option value="Closed Won">Closed Won</option>
-            <option value="Closed Lost">Closed Lost</option>
+            <option value="Fresh">Fresh</option>
+            <option value="Buffer fresh">Buffer fresh</option>
+            <option value="Did not pick">Did not pick</option>
+            <option value="Request call back">Request call back</option>
+            <option value="Follow up">Follow up</option>
+            <option value="Counselled">Counselled</option>
+            <option value="Interested in next batch">Interested in next batch</option>
+            <option value="Registration fees paid">Registration fees paid</option>
+            <option value="Enrolled">Enrolled</option>
+            <option value="Junk/not interested">Junk/not interested</option>
           </select>
-          
-          <input type="text" id="filter-search" placeholder="Search by name, email, or company...">
+          <button onclick="clearFilters()" class="btn btn-secondary" style="white-space: nowrap;">
+            <i class="fas fa-times"></i> Clear
+          </button>
         </div>
       </div>
       
       <!-- Leads List -->
-      <div class="card">
-        <h2>My Leads</h2>
+      <div class="card" id="leads-section">
+        <h2 style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <span style="display: flex; align-items: center;">
+            <i class="fas fa-address-book" style="margin-right: 8px; color: #6366f1;"></i>
+            My Leads
+          </span>
+          <span id="leads-count" style="font-size: 14px; font-weight: 500; color: #6b7280;">0 leads</span>
+        </h2>
         <div id="leads-container"></div>
+      </div>
+      
+      <!-- Analytics Section -->
+      <div id="analytics-section" style="margin-top: 24px;">
+        <h2 style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+          <i class="fas fa-chart-bar" style="color: #6366f1;"></i>
+          Analytics & Insights
+        </h2>
+        
+        <div class="card" style="margin-bottom: 16px;">
+          <h3>Status Distribution</h3>
+          <canvas id="user-status-chart" style="max-height: 300px;"></canvas>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+          <div class="card">
+            <h3 style="display: flex; align-items: center; gap: 8px;">
+              <i class="fas fa-chart-line" style="color: #047857;"></i>
+              Performance Metrics
+            </h3>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+              <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6;">
+                <span style="color: #6b7280; font-size: 14px;">Conversion Rate</span>
+                <span id="conversion-rate" style="font-weight: 600; color: #047857;">0%</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6;">
+                <span style="color: #6b7280; font-size: 14px;">Avg. Follow-ups</span>
+                <span id="avg-followups" style="font-weight: 600;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                <span style="color: #6b7280; font-size: 14px;">Active Leads</span>
+                <span id="active-leads" style="font-weight: 600; color: #0369a1;">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       
     </div>
   </div>
   
-  <!-- Lead Detail Modal -->
+  <!--Lead Detail Modal -->
   <div id="lead-modal" class="modal" style="display: none;">
     <div class="modal-content">
       <span class="close" onclick="closeModal()">&times;</span>
@@ -115,21 +208,26 @@
       <h2 id="modal-lead-name"></h2>
       
       <div class="lead-details">
+        <p><strong>Contact:</strong> <span id="modal-lead-contact"></span></p>
         <p><strong>Email:</strong> <span id="modal-lead-email"></span></p>
-        <p><strong>Phone:</strong> <span id="modal-lead-phone"></span></p>
-        <p><strong>Company:</strong> <span id="modal-lead-company"></span></p>
+        <p><strong>City:</strong> <span id="modal-lead-city"></span></p>
+        <p><strong>University:</strong> <span id="modal-lead-university"></span></p>
+        <p><strong>Course:</strong> <span id="modal-lead-course"></span></p>
+        <p><strong>Profession:</strong> <span id="modal-lead-profession"></span></p>
         
         <div class="form-group">
           <label for="modal-lead-status">Status:</label>
           <select id="modal-lead-status">
-            <option value="New">New</option>
-            <option value="Prospect">Prospect</option>
-            <option value="Suspect">Suspect</option>
-            <option value="Cold">Cold</option>
-            <option value="Warm">Warm</option>
-            <option value="Hot">Hot</option>
-            <option value="Closed Won">Closed Won</option>
-            <option value="Closed Lost">Closed Lost</option>
+            <option value="Fresh">Fresh</option>
+            <option value="Buffer fresh">Buffer fresh</option>
+            <option value="Did not pick">Did not pick</option>
+            <option value="Request call back">Request call back</option>
+            <option value="Follow up">Follow up</option>
+            <option value="Counselled">Counselled</option>
+            <option value="Interested in next batch">Interested in next batch</option>
+            <option value="Registration fees paid">Registration fees paid</option>
+            <option value="Enrolled">Enrolled</option>
+            <option value="Junk/not interested">Junk/not interested</option>
           </select>
           <button onclick="updateLeadStatus()" class="btn btn-primary">Update Status</button>
         </div>
@@ -150,6 +248,7 @@
     </div>
   </div>
   
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/user.js"></script>
 </body>

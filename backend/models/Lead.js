@@ -5,21 +5,27 @@ const leadSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  email: {
-    type: String,
-    required: true
-  },
-  phone: {
-    type: String,
-    required: true
-  },
-  company: {
-    type: String
-  },
+  contact: { type: String },
+  email: { type: String },
+  city: { type: String },
+  university: { type: String },
+  course: { type: String },
+  profession: { type: String },
   status: {
     type: String,
-    enum: ['New', 'Prospect', 'Suspect', 'Cold', 'Warm', 'Hot', 'Closed Won', 'Closed Lost'],
-    default: 'New'
+    enum: [
+      'Fresh',
+      'Buffer fresh',
+      'Did not pick',
+      'Request call back',
+      'Follow up',
+      'Counselled',
+      'Interested in next batch',
+      'Registration fees paid',
+      'Enrolled',
+      'Junk/not interested'
+    ],
+    default: 'Fresh'
   },
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,

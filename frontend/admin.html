@@ -23,6 +23,10 @@
         <i class="fas fa-chart-line"></i>
         <span>Dashboard</span>
       </a>
+      <a href="#" class="sidebar-nav-item" data-section="performance">
+        <i class="fas fa-bolt"></i>
+        <span>Performance</span>
+      </a>
       <a href="#" class="sidebar-nav-item" data-section="upload">
         <i class="fas fa-upload"></i>
         <span>Upload Leads</span>
@@ -82,12 +86,14 @@
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Contact</th>
                 <th>Email</th>
-                <th>Phone</th>
-                <th>Company</th>
+                <th>City</th>
+                <th>University</th>
+                <th>Course</th>
+                <th>Profession</th>
                 <th>Status</th>
                 <th>Assigned To</th>
-                <th>Notes</th>
                 <th>Updated</th>
               </tr>
             </thead>
@@ -124,6 +130,34 @@
         </div>
         </div>
       </div>
+
+      <!-- Overall Performance Section -->
+      <div class="card" id="overall-performance-card">
+        <h2>Overall Performance</h2>
+        <div id="overall-performance-body">
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <h3 style="text-align: center; color: #047857; margin-bottom: 16px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <i class="fas fa-chart-line"></i>
+              Overall Performance Metrics
+            </h3>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Total Conversion Rate</span>
+                <span id="overall-conversion-rate" style="font-weight: 700; color: #047857; font-size: 16px;">0%</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Avg. Follow-ups per Lead</span>
+                <span id="overall-avg-followups" style="font-weight: 700; color: #6366f1; font-size: 16px;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Total Active Leads</span>
+                <span id="overall-active-leads" style="font-weight: 700; color: #0369a1; font-size: 16px;">0</span>
+              </div>
+            </div>
+          </div>
+          <p style="margin-top:12px; font-size:12px; color:#6b7280;">Metrics are populated when you click <strong>Load Statistics</strong> in the Overall Dashboard section.</p>
+        </div>
+      </div>
       
       <!-- Upload Leads Section -->
       <div class="card">
@@ -153,15 +187,19 @@
         
         <div class="info-box">
           <h4>Required Excel Columns:</h4>
-          <p style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Your Excel file should include:</p>
-          <ul>
+          <p style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Use the exact column headers below (case-insensitive):</p>
+          <ul style="columns:2; gap:12px;">
             <li>Name</li>
+            <li>Contact</li>
             <li>Email</li>
-            <li>Phone</li>
-            <li>Company (optional)</li>
+            <li>City</li>
+            <li>University</li>
+            <li>Course</li>
+            <li>Profession</li>
             <li>Status (optional)</li>
             <li>Notes (optional)</li>
           </ul>
+          <p style="font-size:11px; color:#9ca3af; margin-top:8px;">Extra columns are ignored. Status defaults to "Fresh" if omitted.</p>
         </div>
       </div>
       
@@ -271,6 +309,28 @@
             <canvas id="statusChart" style="max-height: 300px;"></canvas>
           </div>
           
+          <!-- User Performance Metrics -->
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 16px;">
+            <h3 style="text-align: center; color: #047857; margin-bottom: 16px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <i class="fas fa-chart-line"></i>
+              Performance Metrics
+            </h3>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Conversion Rate</span>
+                <span id="user-conversion-rate" style="font-weight: 700; color: #047857; font-size: 16px;">0%</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Avg. Follow-ups per Lead</span>
+                <span id="user-avg-followups" style="font-weight: 700; color: #6366f1; font-size: 16px;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px; background: #f9fafb; border-radius: 4px;">
+                <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Active Leads</span>
+                <span id="user-active-leads" style="font-weight: 700; color: #0369a1; font-size: 16px;">0</span>
+              </div>
+            </div>
+          </div>
+          
           <div class="stats-grid">
             <div class="stat-card">
               <h4>Total Leads</h4>
@@ -286,11 +346,13 @@
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Company</th>
-                  <th>Phone</th>
+                  <th>Contact</th>
+                  <th>Email</th>
+                  <th>City</th>
+                  <th>University</th>
+                  <th>Course</th>
+                  <th>Profession</th>
                   <th>Status</th>
-                  <th>Notes</th>
-                  <th>Status Changes</th>
                   <th>Last Updated</th>
                 </tr>
               </thead>
@@ -308,9 +370,12 @@
       <span class="close" onclick="closeAdminLeadModal()">&times;</span>
       <h2 id="admin-modal-lead-name"></h2>
       <div class="lead-details">
+        <p><strong>Contact:</strong> <span id="admin-modal-lead-contact"></span></p>
         <p><strong>Email:</strong> <span id="admin-modal-lead-email"></span></p>
-        <p><strong>Phone:</strong> <span id="admin-modal-lead-phone"></span></p>
-        <p><strong>Company:</strong> <span id="admin-modal-lead-company"></span></p>
+        <p><strong>City:</strong> <span id="admin-modal-lead-city"></span></p>
+        <p><strong>University:</strong> <span id="admin-modal-lead-university"></span></p>
+        <p><strong>Course:</strong> <span id="admin-modal-lead-course"></span></p>
+        <p><strong>Profession:</strong> <span id="admin-modal-lead-profession"></span></p>
         <p><strong>Current Status:</strong> <span id="admin-modal-lead-status"></span></p>
       </div>
       <h3>Status History</h3>
@@ -331,20 +396,26 @@
   </div>
   <!-- Status Leads Modal -->
   <div id="status-leads-modal" class="modal" style="display:none;">
-    <div class="modal-content">
-      <span class="close" onclick="closeStatusLeadsModal()">&times;</span>
-      <h2 id="status-leads-title"></h2>
-      <div id="status-leads-count" style="margin-bottom:10px;"></div>
-      <div style="overflow-x:auto;">
-        <table class="data-table">
+    <div class="modal-content status-modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header-row">
+        <h2 id="status-leads-title" class="modal-title"></h2>
+        <button class="btn btn-secondary btn-sm" onclick="closeStatusLeadsModal()" style="min-width:80px;">Close</button>
+      </div>
+      <div id="status-leads-count" style="margin:4px 0 14px; font-size:13px; color:#6b7280;"></div>
+      <div class="table-responsive" style="overflow-x:auto;">
+        <table class="data-table compact" id="status-leads-table">
           <thead>
             <tr>
               <th>Name</th>
+              <th>Contact</th>
               <th>Email</th>
-              <th>Phone</th>
-              <th>Company</th>
+              <th>City</th>
+              <th>University</th>
+              <th>Course</th>
+              <th>Profession</th>
               <th>Status</th>
               <th>Assigned To</th>
+              <th>Updated</th>
             </tr>
           </thead>
           <tbody id="status-leads-tbody"></tbody>
