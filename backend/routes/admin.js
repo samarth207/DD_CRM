@@ -7,6 +7,7 @@ const Lead = require('../models/Lead');
 const User = require('../models/User');
 const Brochure = require('../models/Brochure');
 const { auth, adminAuth } = require('../middleware/auth');
+const { mapExcelRowToLead, getMappingSummary } = require('../utils/excelFieldMapper');
 
 const router = express.Router();
 
@@ -251,6 +252,10 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
+    // Get mapping summary for logging
+    const mappingSummary = getMappingSummary(data);
+    console.log('Excel Field Mapping Summary:', mappingSummary);
+
     // Preload existing leads keyed by normalized email or contact
     const allExistingLeads = await Lead.find({}, 'email contact');
     const existingMap = new Map();
@@ -265,10 +270,16 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     const duplicates = [];
 
     data.forEach((row, index) => {
-      const rawEmail = row.Email || row.email || '';
-      const rawContact = row.Contact || row.contact || '';
-      const normEmail = rawEmail.trim().toLowerCase();
-      const normContact = typeof rawContact === 'string' ? rawContact.replace(/\D/g, '') : String(rawContact || '').replace(/\D/g, '');
+      // Use smart field mapper to extract lead data
+      const leadData = mapExcelRowToLead(row, {
+        assignedUserId: userIds[index % userIds.length],
+        createdBy: req.userId,
+        defaultStatus: 'Fresh'
+      });
+
+      // Normalize email and contact for duplicate checking
+      const normEmail = leadData.email ? leadData.email.toLowerCase() : '';
+      const normContact = leadData.contact ? String(leadData.contact).replace(/\D/g, '') : '';
 
       const emailKey = normEmail ? `E:${normEmail}` : null;
       const contactKey = normContact ? `C:${normContact}` : null;
@@ -286,35 +297,7 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       if (emailKey) existingMap.set(emailKey, true);
       if (contactKey) existingMap.set(contactKey, true);
 
-      const assignedUserId = userIds[index % userIds.length];
-
-      newLeads.push(new Lead({
-        name: row.Name || row.name || 'Unknown',
-        contact: rawContact,
-        email: rawEmail,
-        city: row.City || row.city || '',
-        university: row.University || row.university || '',
-        course: row.Course || row.course || '',
-        profession: row.Profession || row.profession || row.Profassion || row.profassion || '',
-        status: row.Status || row.status || 'Fresh',
-        assignedTo: assignedUserId,
-        notes: (row.Notes || row.notes) ? [{
-          content: row.Notes || row.notes,
-          createdBy: req.userId
-        }] : [],
-        statusHistory: [{
-          status: row.Status || row.status || 'Fresh',
-          changedBy: req.userId,
-          changedAt: new Date()
-        }],
-        assignmentHistory: [{
-          action: 'assigned',
-          fromUser: null,
-          toUser: assignedUserId,
-          changedBy: req.userId,
-          changedAt: new Date()
-        }]
-      }));
+      newLeads.push(new Lead(leadData));
     });
 
     if (newLeads.length) {

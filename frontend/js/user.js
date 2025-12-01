@@ -113,7 +113,7 @@ function displayBrochures(brochures) {
             ${brochure.course}
           </span>
           <div style="display:flex; gap:8px;">
-            <a href="http://localhost:5000/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-eye"></i> View</a>
+            <a href="${BASE_URL}/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-eye"></i> View</a>
             <button onclick="downloadBrochure('${brochure.filePath}', '${brochure.university}-${brochure.course}-brochure.pdf')" class="btn btn-primary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-download"></i> Download</button>
           </div>
         `;
@@ -145,7 +145,7 @@ function toggleUniversityBrochures(univId) {
 }
 
 function downloadBrochure(filePath, fileName) {
-  fetch(`http://localhost:5000/${filePath}`)
+  fetch(`${BASE_URL}/${filePath}`)
     .then(response => response.blob())
     .then(blob => {
       const url = window.URL.createObjectURL(blob);
@@ -236,7 +236,7 @@ function downloadBulkBrochures() {
   filtered.forEach((brochure, index) => {
     setTimeout(() => {
       const link = document.createElement('a');
-      link.href = `http://localhost:5000/${brochure.filePath}`;
+      link.href = `${BASE_URL}/${brochure.filePath}`;
       link.download = '';
       document.body.appendChild(link);
       link.click();
@@ -538,31 +538,69 @@ async function openLeadModal(lead) {
   document.getElementById('modal-lead-profession').textContent = lead.profession || 'N/A';
   document.getElementById('modal-lead-status').value = lead.status;
 
-  // Fetch brochure for this university/course
+  // Load all available brochures (not just for this lead's course/university)
   const brochureDiv = document.getElementById('modal-lead-brochure');
-  brochureDiv.innerHTML = '<span style="color:#9ca3af;">Checking for brochure...</span>';
-  let brochureUrl = null;
+  brochureDiv.innerHTML = '<span style="color:#9ca3af;">Loading brochures...</span>';
+  
   try {
     const token = getToken();
-    const response = await fetch(`${API_URL}/admin/brochures?university=${encodeURIComponent(lead.university)}&course=${encodeURIComponent(lead.course)}`, {
+    const response = await fetch(`${API_URL}/admin/brochures`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    const brochures = await response.json();
-    if (Array.isArray(brochures) && brochures.length > 0) {
-      const b = brochures[0];
-      brochureUrl = `http://localhost:5000/${b.filePath}`;
-      brochureDiv.innerHTML = `
-        <div style="display:flex; gap:8px;">
-          <a href="${brochureUrl}" target="_blank" class="btn btn-secondary"><i class="fas fa-eye"></i> View Brochure</a>
-          <button onclick="downloadBrochure('${b.filePath}', '${lead.university}-${lead.course}-brochure.pdf')" class="btn btn-primary"><i class="fas fa-download"></i> Download Brochure</button>
+    const allBrochures = await response.json();
+    
+    if (Array.isArray(allBrochures) && allBrochures.length > 0) {
+      // Build brochure interface with filters
+      let brochureHtml = `
+        <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+          <h4 style="margin:0 0 10px 0; color:#1e293b; font-size:14px; display:flex; align-items:center; gap:6px;">
+            <i class="fas fa-book-open" style="color:#6366f1;"></i>
+            Available Brochures for Download
+          </h4>
+          
+          <div style="margin-bottom:12px; display:flex; gap:8px;">
+            <select id="modal-brochure-filter-univ" onchange="filterModalBrochures()" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
+              <option value="">All Universities</option>
+            </select>
+            <select id="modal-brochure-filter-course" onchange="filterModalBrochures()" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
+              <option value="">All Courses</option>
+            </select>
+          </div>
+          
+          <div id="modal-brochure-list" style="max-height:300px; overflow-y:auto; background:white; border:1px solid #e2e8f0; border-radius:6px; padding:8px;">
+            <!-- Brochures will be populated here -->
+          </div>
         </div>
       `;
+      brochureDiv.innerHTML = brochureHtml;
+      
+      // Store brochures globally for filtering
+      window.modalBrochures = allBrochures;
+      
+      // Populate filter dropdowns
+      const universities = [...new Set(allBrochures.map(b => b.university))].sort();
+      const courses = [...new Set(allBrochures.map(b => b.course))].sort();
+      
+      const univSelect = document.getElementById('modal-brochure-filter-univ');
+      universities.forEach(u => {
+        univSelect.innerHTML += `<option value="${u}">${u}</option>`;
+      });
+      
+      const courseSelect = document.getElementById('modal-brochure-filter-course');
+      courses.forEach(c => {
+        courseSelect.innerHTML += `<option value="${c}">${c}</option>`;
+      });
+      
+      // Display all brochures initially
+      displayModalBrochures(allBrochures);
+      
     } else {
-      brochureDiv.innerHTML = '<span style="color:#e11d48;">No brochure available for this course/university.</span>';
+      brochureDiv.innerHTML = '<span style="color:#e11d48;">No brochures available in the system.</span>';
     }
   } catch (error) {
-    brochureDiv.innerHTML = '<span style="color:#e11d48;">Error loading brochure.</span>';
+    brochureDiv.innerHTML = '<span style="color:#e11d48;">Error loading brochures.</span>';
+    console.error('Error loading brochures:', error);
   }
 
   // WhatsApp message button
@@ -573,15 +611,12 @@ async function openLeadModal(lead) {
     const userName = userData.name || 'DD CRM Team';
     
     const message = encodeURIComponent(
-      `Hello ${lead.name},\n\nThank you for your interest in ${lead.course} at ${lead.university}. Below you can find the brochure for your reference.\n\nIf you have any questions, feel free to reply here.\n\nBest regards,\n${userName}`
+      `Hello ${lead.name},\n\nThank you for your interest in our courses. I've attached course brochures for your reference.\n\nIf you have any questions, feel free to reply here.\n\nBest regards,\n${userName}`
     );
     const phone = lead.contact.replace(/\D/g, '');
     // Use whatsapp:// protocol for desktop app integration
     let waUrl = `whatsapp://send?phone=${phone}&text=${message}`;
     whatsappDiv.innerHTML = `<a href="${waUrl}" class="btn btn-success" style="text-decoration:none;"><i class="fab fa-whatsapp"></i> Send WhatsApp Message</a>`;
-    if (!brochureUrl) {
-      whatsappDiv.innerHTML += `<div style='color:#e11d48; font-size:12px; margin-top:4px;'>Brochure not available for this course/university.</div>`;
-    }
   } else {
     whatsappDiv.innerHTML = '<span style="color:#e11d48;">No contact number available for WhatsApp.</span>';
   }
@@ -1327,3 +1362,74 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
+// Function to display brochures in modal
+function displayModalBrochures(brochures) {
+  const listDiv = document.getElementById('modal-brochure-list');
+  if (!listDiv) return;
+  
+  if (brochures.length === 0) {
+    listDiv.innerHTML = '<p style="color:#9ca3af; text-align:center; padding:12px; font-size:13px;">No brochures match your selection.</p>';
+    return;
+  }
+  
+  // Group by university
+  const grouped = {};
+  brochures.forEach(b => {
+    if (!grouped[b.university]) grouped[b.university] = [];
+    grouped[b.university].push(b);
+  });
+  
+  listDiv.innerHTML = '';
+  
+  Object.keys(grouped).sort().forEach(univ => {
+    const univSection = document.createElement('div');
+    univSection.style.cssText = 'margin-bottom:10px;';
+    
+    const univHeader = document.createElement('div');
+    univHeader.style.cssText = 'font-weight:600; color:#1e293b; font-size:13px; padding:6px 8px; background:#f1f5f9; border-radius:4px; margin-bottom:4px; display:flex; align-items:center; gap:6px;';
+    univHeader.innerHTML = `<i class="fas fa-university" style="color:#6366f1; font-size:11px;"></i>${univ}`;
+    univSection.appendChild(univHeader);
+    
+    grouped[univ].forEach(brochure => {
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:4px; background:#fafafa; transition:all 0.2s;';
+      item.onmouseenter = (e) => { e.currentTarget.style.background = '#f0f9ff'; e.currentTarget.style.borderColor = '#bfdbfe'; };
+      item.onmouseleave = (e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#e2e8f0'; };
+      
+      item.innerHTML = `
+        <span style="font-size:13px; color:#374151; display:flex; align-items:center; gap:6px;">
+          <i class="fas fa-book" style="color:#6366f1; font-size:11px;"></i>
+          ${brochure.course}
+        </span>
+        <div style="display:flex; gap:6px;">
+          <a href="${BASE_URL}/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:11px; padding:4px 10px;"><i class="fas fa-eye"></i> View</a>
+          <button onclick="downloadBrochure('${brochure.filePath}', '${brochure.university}-${brochure.course}-brochure.pdf')" class="btn btn-primary" style="font-size:11px; padding:4px 10px;"><i class="fas fa-download"></i> Download</button>
+        </div>
+      `;
+      
+      univSection.appendChild(item);
+    });
+    
+    listDiv.appendChild(univSection);
+  });
+}
+
+// Function to filter brochures in modal
+function filterModalBrochures() {
+  if (!window.modalBrochures) return;
+  
+  const univFilter = document.getElementById('modal-brochure-filter-univ').value;
+  const courseFilter = document.getElementById('modal-brochure-filter-course').value;
+  
+  let filtered = window.modalBrochures;
+  
+  if (univFilter) {
+    filtered = filtered.filter(b => b.university === univFilter);
+  }
+  
+  if (courseFilter) {
+    filtered = filtered.filter(b => b.course === courseFilter);
+  }
+  
+  displayModalBrochures(filtered);
+}

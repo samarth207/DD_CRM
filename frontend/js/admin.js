@@ -145,11 +145,11 @@ async function loadBrochuresAdmin() {
 }
 
 function viewBrochurePDF(filePath) {
-  window.open(`http://localhost:5000/${filePath}`, '_blank');
+  window.open(`${BASE_URL}/${filePath}`, '_blank');
 }
 
 function downloadBrochurePDF(filePath, fileName) {
-  fetch(`http://localhost:5000/${filePath}`)
+  fetch(`${BASE_URL}/${filePath}`)
     .then(response => response.blob())
     .then(blob => {
       const url = window.URL.createObjectURL(blob);

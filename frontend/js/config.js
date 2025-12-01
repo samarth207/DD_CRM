@@ -2,6 +2,11 @@ const API_URL = (typeof window !== 'undefined' && window.API_URL_OVERRIDE)
   ? window.API_URL_OVERRIDE 
   : (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
 
+// Base URL for static files (brochures, uploads, etc.)
+const BASE_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:5000' 
+  : window.location.origin;
+
 function getToken() {
   return localStorage.getItem('token');
 }
