@@ -9,6 +9,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   console.log('Current hostname:', window.location.hostname);
   console.log('API_URL:', API_URL);
   console.log('Login endpoint:', `${API_URL}/auth/login`);
+  console.log('Request payload:', { email, password: '***' });
   
   try {
     const response = await fetch(`${API_URL}/auth/login`, {
@@ -20,6 +21,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     });
     
     const data = await response.json();
+    
+    console.log('Response status:', response.status);
+    console.log('Response data:', data);
     
     if (response.ok) {
       // Store token and user info
@@ -33,10 +37,12 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         window.location.href = 'user.html';
       }
     } else {
+      console.error('Login failed:', data);
       errorMessage.textContent = data.message || 'Login failed';
       errorMessage.style.display = 'block';
     }
   } catch (error) {
+    console.error('Login error:', error);
     errorMessage.textContent = 'An error occurred. Please try again.';
     errorMessage.style.display = 'block';
     console.error('Login error:', error);
