@@ -5,6 +5,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   const password = document.getElementById('password').value;
   const errorMessage = document.getElementById('error-message');
   
+  // Debug logging
+  console.log('Current hostname:', window.location.hostname);
+  console.log('API_URL:', API_URL);
+  console.log('Login endpoint:', `${API_URL}/auth/login`);
+  
   try {
     const response = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
