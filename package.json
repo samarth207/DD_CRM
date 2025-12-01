@@ -11,16 +11,21 @@
     "backfill:assignments": "node backend/scripts/backfillAssignmentHistory.js",
     "generate:leads": "node backend/scripts/generateSampleExcel.js"
   },
-  "keywords": ["crm", "telemarketing", "leads"],
+  "keywords": [
+    "crm",
+    "telemarketing",
+    "leads"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^7.6.3",
+    "archiver": "^6.0.2",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.6.3",
     "multer": "^1.4.5-lts.1",
     "xlsx": "^0.18.5"
   },
