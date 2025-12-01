@@ -1,3 +1,193 @@
+// Modal functions for Add Brochure
+function openAddBrochureModal() {
+  const modal = document.getElementById('add-brochure-modal');
+  modal.style.display = 'flex';
+  document.getElementById('upload-brochure-form').reset();
+  document.getElementById('upload-brochure-message').style.display = 'none';
+}
+
+function closeAddBrochureModal() {
+  const modal = document.getElementById('add-brochure-modal');
+  modal.style.display = 'none';
+  document.getElementById('upload-brochure-form').reset();
+  document.getElementById('upload-brochure-message').style.display = 'none';
+}
+
+// Modal functions for Create User
+function openCreateUserModal() {
+  const modal = document.getElementById('create-user-modal');
+  modal.style.display = 'flex';
+  document.getElementById('create-user-form').reset();
+  document.getElementById('create-user-message').style.display = 'none';
+}
+
+function closeCreateUserModal() {
+  const modal = document.getElementById('create-user-modal');
+  modal.style.display = 'none';
+  document.getElementById('create-user-form').reset();
+  document.getElementById('create-user-message').style.display = 'none';
+}
+
+// Global Escape key handler for all modals
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    // Close brochure modal
+    const brochureModal = document.getElementById('add-brochure-modal');
+    if (brochureModal && brochureModal.style.display === 'flex') {
+      closeAddBrochureModal();
+      return;
+    }
+    
+    // Close create user modal
+    const userModal = document.getElementById('create-user-modal');
+    if (userModal && userModal.style.display === 'flex') {
+      closeCreateUserModal();
+      return;
+    }
+    
+    // Close user detail modal
+    const detailModal = document.getElementById('user-detail-modal');
+    if (detailModal && detailModal.style.display === 'flex') {
+      closeUserDetailModal();
+      return;
+    }
+  }
+});
+
+// Upload brochure form
+document.getElementById('upload-brochure-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const university = document.getElementById('brochure-university').value.trim();
+  const course = document.getElementById('brochure-course').value.trim();
+  const fileInput = document.getElementById('brochure-file');
+  if (!university || !course) {
+    showBrochureMessage('Please enter university and course', 'error');
+    return;
+  }
+  if (!fileInput.files[0]) {
+    showBrochureMessage('Please select a PDF file', 'error');
+    return;
+  }
+  const formData = new FormData();
+  formData.append('university', university);
+  formData.append('course', course);
+  formData.append('file', fileInput.files[0]);
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/upload-brochure`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+    const data = await response.json();
+    if (response.ok) {
+      showBrochureMessage(data.message || 'Brochure uploaded successfully', 'success');
+      document.getElementById('upload-brochure-form').reset();
+      loadBrochuresAdmin(); // Refresh list
+      setTimeout(() => closeAddBrochureModal(), 1500); // Close modal after success
+    } else {
+      showBrochureMessage(data.message || 'Upload failed', 'error');
+    }
+  } catch (error) {
+    showBrochureMessage('An error occurred during upload', 'error');
+    console.error('Brochure upload error:', error);
+  }
+});
+
+function showBrochureMessage(message, type) {
+  const msgDiv = document.getElementById('upload-brochure-message');
+  msgDiv.textContent = message;
+  msgDiv.className = `message ${type}`;
+  msgDiv.style.display = 'block';
+  setTimeout(() => { msgDiv.style.display = 'none'; }, 5000);
+}
+
+// Load and display all brochures for admin
+async function loadBrochuresAdmin() {
+  const listDiv = document.getElementById('brochures-admin-list');
+  if (!listDiv) return;
+  listDiv.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 20px 0;">Loading...</p>';
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/brochures`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const brochures = await response.json();
+    if (Array.isArray(brochures) && brochures.length > 0) {
+      let html = '<table class="table"><thead><tr><th>University</th><th>Course</th><th>Uploaded By</th><th>Date</th><th>Actions</th></tr></thead><tbody>';
+      brochures.forEach(b => {
+        const uploadDate = new Date(b.uploadedAt).toLocaleDateString();
+        const uploadedBy = b.uploadedBy ? b.uploadedBy.name : 'Unknown';
+        html += `<tr>
+          <td>${b.university}</td>
+          <td>${b.course}</td>
+          <td>${uploadedBy}</td>
+          <td>${uploadDate}</td>
+          <td>
+            <button onclick="viewBrochurePDF('${b.filePath}')" class="btn btn-secondary" style="font-size:12px; padding:4px 8px;"><i class="fas fa-eye"></i> View</button>
+            <button onclick="downloadBrochurePDF('${b.filePath}', '${b.university}-${b.course}-brochure.pdf')" class="btn btn-primary" style="font-size:12px; padding:4px 8px; margin-right:4px;"><i class="fas fa-download"></i> Download</button>
+            <button onclick="deleteBrochure('${b._id}')" class="btn btn-danger" style="font-size:12px; padding:4px 8px; background:#dc2626;"><i class="fas fa-trash"></i> Delete</button>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      listDiv.innerHTML = html;
+    } else {
+      listDiv.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 20px 0;">No brochures uploaded yet.</p>';
+    }
+  } catch (error) {
+    listDiv.innerHTML = '<p style="color: #e11d48; text-align: center; padding: 20px 0;">Error loading brochures.</p>';
+    console.error('Error loading brochures:', error);
+  }
+}
+
+function viewBrochurePDF(filePath) {
+  window.open(`http://localhost:5000/${filePath}`, '_blank');
+}
+
+function downloadBrochurePDF(filePath, fileName) {
+  fetch(`http://localhost:5000/${filePath}`)
+    .then(response => response.blob())
+    .then(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    })
+    .catch(error => {
+      console.error('Download error:', error);
+      alert('Failed to download brochure');
+    });
+}
+
+async function deleteBrochure(id) {
+  if (!confirm('Are you sure you want to delete this brochure?')) return;
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/brochure/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    if (response.ok) {
+      showBrochureMessage(data.message || 'Brochure deleted successfully', 'success');
+      loadBrochuresAdmin();
+    } else {
+      alert(data.message || 'Delete failed');
+    }
+  } catch (error) {
+    alert('An error occurred during delete');
+    console.error('Brochure delete error:', error);
+  }
+}
+
 // Check authentication
 const user = getUser();
 if (!user || user.role !== 'admin') {
@@ -24,6 +214,9 @@ document.addEventListener('DOMContentLoaded', function() {
       showSection(section);
     });
   });
+  
+  // Auto-load dashboard statistics on page load
+  loadOverallStats();
 });
 
 // Sidebar navigation handler
@@ -56,14 +249,13 @@ function showSection(section) {
     case 'upload':
       targetId = 'upload-form';
       break;
-    case 'users':
-      targetId = 'manage-users-card';
-      // Check if section needs to be expanded
-      const manageUsersBody = document.getElementById('manage-users-body');
-      if (manageUsersBody && manageUsersBody.style.display === 'none') {
-        shouldExpand = true;
-        expandFunction = toggleManageUsers;
-      }
+    case 'brochures':
+      targetId = 'manage-brochures-card';
+      loadBrochuresAdmin(); // Load brochures when navigating to section
+      break;
+    case 'settings':
+      targetId = 'settings-card';
+      loadUsers(); // Load users when navigating to settings
       break;
     case 'progress':
       targetId = 'progress-user-select';
@@ -75,8 +267,8 @@ function showSection(section) {
       }
       break;
     case 'settings':
-      // Scroll to settings sections (create user and password reset)
-      targetId = 'create-user-form';
+      targetId = 'settings-card';
+      loadUsers(); // Load users when navigating to settings
       break;
   }
   
@@ -247,6 +439,13 @@ document.getElementById('create-user-form').addEventListener('submit', async (e)
   const name = document.getElementById('new-user-name').value;
   const email = document.getElementById('new-user-email').value;
   const password = document.getElementById('new-user-password').value;
+  const confirmPassword = document.getElementById('new-user-confirm-password').value;
+  
+  // Validate passwords match
+  if (password !== confirmPassword) {
+    showCreateUserMessage('Passwords do not match', 'error');
+    return;
+  }
   
   try {
     const response = await apiCall('/admin/create-user', {
@@ -260,6 +459,7 @@ document.getElementById('create-user-form').addEventListener('submit', async (e)
       showCreateUserMessage(data.message, 'success');
       document.getElementById('create-user-form').reset();
       loadUsers(); // Reload user list
+      setTimeout(() => closeCreateUserModal(), 1500); // Close modal after success
     } else {
       showCreateUserMessage(data.message || 'User creation failed', 'error');
     }
@@ -274,6 +474,13 @@ document.getElementById('admin-password-form').addEventListener('submit', async 
   e.preventDefault();
   
   const newPassword = document.getElementById('admin-new-password').value;
+  const confirmPassword = document.getElementById('admin-confirm-password').value;
+  
+  // Validate passwords match
+  if (newPassword !== confirmPassword) {
+    showAdminPasswordMessage('Passwords do not match', 'error');
+    return;
+  }
   
   try {
     const response = await apiCall('/admin/reset-my-password', {
@@ -381,14 +588,25 @@ document.getElementById('progress-user-select').addEventListener('change', async
   if (!userId) {
     document.getElementById('user-progress').style.display = 'none';
     currentUserLeads = [];
+    allUserLeadsData = null; // Reset cache
     return;
   }
+  
+  // Reset user leads data cache when switching users
+  allUserLeadsData = null;
+  
+  // Reset date filter
+  const filterSelect = document.getElementById('user-chart-date-filter');
+  if (filterSelect) filterSelect.value = 'all';
+  const customRange = document.getElementById('user-custom-date-range');
+  if (customRange) customRange.style.display = 'none';
   
   try {
     const response = await apiCall(`/admin/user-progress/${userId}`);
     const data = await response.json();
     
     if (response.ok) {
+      allUserLeadsData = data.leads; // Store for filtering
       displayUserProgress(data);
     }
   } catch (error) {
@@ -1370,5 +1588,243 @@ async function resetAdminPassword() {
     msgDiv.textContent = 'Reset failed';
     msgDiv.className = 'message error';
     msgDiv.style.display = 'block';
+  }
+}
+
+// ============ Date Filter Functions ============
+
+// Store all leads data for filtering
+let allLeadsData = null;
+let allUserLeadsData = null;
+
+// Date range calculation helper
+function getDateRange(filterValue, customStart = null, customEnd = null) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  switch(filterValue) {
+    case 'today':
+      return { start: today, end: new Date() };
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return { start: yesterday, end: today };
+    
+    case 'week':
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() - today.getDay()); // Start of week (Sunday)
+      return { start: weekStart, end: new Date() };
+    
+    case '15days':
+      const days15 = new Date(today);
+      days15.setDate(days15.getDate() - 15);
+      return { start: days15, end: new Date() };
+    
+    case '30days':
+      const days30 = new Date(today);
+      days30.setDate(days30.getDate() - 30);
+      return { start: days30, end: new Date() };
+    
+    case 'custom':
+      if (customStart && customEnd) {
+        return { start: new Date(customStart), end: new Date(customEnd + 'T23:59:59') };
+      }
+      return null;
+    
+    case 'all':
+    default:
+      return null;
+  }
+}
+
+// Filter leads by date range
+function filterLeadsByDateRange(leads, dateRange) {
+  if (!dateRange) return leads;
+  
+  return leads.filter(lead => {
+    const leadDate = new Date(lead.updatedAt || lead.createdAt);
+    return leadDate >= dateRange.start && leadDate <= dateRange.end;
+  });
+}
+
+// Overall chart date filter
+document.addEventListener('DOMContentLoaded', () => {
+  const overallFilter = document.getElementById('overall-chart-date-filter');
+  if (overallFilter) {
+    overallFilter.addEventListener('change', function() {
+      const customRange = document.getElementById('overall-custom-date-range');
+      if (this.value === 'custom') {
+        customRange.style.display = 'flex';
+      } else {
+        customRange.style.display = 'none';
+        applyOverallDateFilter(this.value);
+      }
+    });
+  }
+  
+  const userFilter = document.getElementById('user-chart-date-filter');
+  if (userFilter) {
+    userFilter.addEventListener('change', function() {
+      const customRange = document.getElementById('user-custom-date-range');
+      if (this.value === 'custom') {
+        customRange.style.display = 'flex';
+      } else {
+        customRange.style.display = 'none';
+        applyUserDateFilter(this.value);
+      }
+    });
+  }
+});
+
+async function applyOverallDateFilter(filterValue) {
+  try {
+    // Fetch all leads if not already loaded
+    if (!allLeadsData) {
+      const response = await apiCall('/admin/all-leads');
+      const data = await response.json();
+      if (response.ok && data.leads) {
+        allLeadsData = data.leads;
+      } else {
+        return;
+      }
+    }
+    
+    const dateRange = getDateRange(filterValue);
+    const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
+    
+    // Calculate status breakdown
+    const statusBreakdown = {};
+    filteredLeads.forEach(lead => {
+      const status = lead.status || 'Unknown';
+      statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+    });
+    
+    // Update chart
+    createOverallStatusChart(statusBreakdown);
+  } catch (error) {
+    console.error('Error applying date filter:', error);
+  }
+}
+
+function applyOverallCustomDateFilter() {
+  const startDate = document.getElementById('overall-start-date').value;
+  const endDate = document.getElementById('overall-end-date').value;
+  
+  if (!startDate || !endDate) {
+    alert('Please select both start and end dates');
+    return;
+  }
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    alert('Start date must be before end date');
+    return;
+  }
+  
+  applyOverallDateFilterCustom(startDate, endDate);
+}
+
+async function applyOverallDateFilterCustom(startDate, endDate) {
+  try {
+    if (!allLeadsData) {
+      const response = await apiCall('/admin/all-leads');
+      const data = await response.json();
+      if (response.ok && data.leads) {
+        allLeadsData = data.leads;
+      } else {
+        return;
+      }
+    }
+    
+    const dateRange = getDateRange('custom', startDate, endDate);
+    const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
+    
+    const statusBreakdown = {};
+    filteredLeads.forEach(lead => {
+      const status = lead.status || 'Unknown';
+      statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+    });
+    
+    createOverallStatusChart(statusBreakdown);
+  } catch (error) {
+    console.error('Error applying custom date filter:', error);
+  }
+}
+
+// User progress chart date filter
+async function applyUserDateFilter(filterValue) {
+  const userId = document.getElementById('progress-user-select').value;
+  if (!userId) return;
+  
+  try {
+    if (!allUserLeadsData) {
+      const response = await apiCall(`/admin/user-progress/${userId}`);
+      const data = await response.json();
+      if (response.ok && data.leads) {
+        allUserLeadsData = data.leads;
+      } else {
+        return;
+      }
+    }
+    
+    const dateRange = getDateRange(filterValue);
+    const filteredLeads = filterLeadsByDateRange(allUserLeadsData, dateRange);
+    
+    const statusBreakdown = {};
+    filteredLeads.forEach(lead => {
+      const status = lead.status || 'Unknown';
+      statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+    });
+    
+    updateStatusChart(statusBreakdown);
+  } catch (error) {
+    console.error('Error applying user date filter:', error);
+  }
+}
+
+function applyUserCustomDateFilter() {
+  const startDate = document.getElementById('user-start-date').value;
+  const endDate = document.getElementById('user-end-date').value;
+  
+  if (!startDate || !endDate) {
+    alert('Please select both start and end dates');
+    return;
+  }
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    alert('Start date must be before end date');
+    return;
+  }
+  
+  applyUserDateFilterCustom(startDate, endDate);
+}
+
+async function applyUserDateFilterCustom(startDate, endDate) {
+  const userId = document.getElementById('progress-user-select').value;
+  if (!userId) return;
+  
+  try {
+    if (!allUserLeadsData) {
+      const response = await apiCall(`/admin/user-progress/${userId}`);
+      const data = await response.json();
+      if (response.ok && data.leads) {
+        allUserLeadsData = data.leads;
+      } else {
+        return;
+      }
+    }
+    
+    const dateRange = getDateRange('custom', startDate, endDate);
+    const filteredLeads = filterLeadsByDateRange(allUserLeadsData, dateRange);
+    
+    const statusBreakdown = {};
+    filteredLeads.forEach(lead => {
+      const status = lead.status || 'Unknown';
+      statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+    });
+    
+    updateStatusChart(statusBreakdown);
+  } catch (error) {
+    console.error('Error applying custom user date filter:', error);
   }
 }

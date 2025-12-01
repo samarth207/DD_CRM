@@ -31,9 +31,9 @@
         <i class="fas fa-upload"></i>
         <span>Upload Leads</span>
       </a>
-      <a href="#" class="sidebar-nav-item" data-section="users">
-        <i class="fas fa-users"></i>
-        <span>Manage Users</span>
+      <a href="#" class="sidebar-nav-item" data-section="brochures">
+        <i class="fas fa-file-pdf"></i>
+        <span>Brochures</span>
       </a>
       <a href="#" class="sidebar-nav-item" data-section="progress">
         <i class="fas fa-chart-bar"></i>
@@ -78,10 +78,10 @@
         </h2>
         <div id="overall-dashboard-body">
         <!-- Global Lead Search -->
-        <div class="form-group" style="margin-bottom:12px;">
+        <div class="form-group" style="margin-bottom:16px;">
           <input type="text" id="global-lead-search" placeholder="Search leads by name, email, phone, company, or status..." autocomplete="off">
         </div>
-        <div id="global-search-results" style="display:none; margin-top:10px;">
+        <div id="global-search-results" style="display:none; margin-top:12px;">
           <table class="data-table">
             <thead>
               <tr>
@@ -101,11 +101,8 @@
           </table>
           <div id="global-search-empty" style="display:none; padding:12px; color:#6b7280; text-align:center; font-size:13px;">No matching leads found.</div>
         </div>
-        <button onclick="loadOverallStats()" class="btn btn-primary" style="margin-bottom: 16px;">
-          <i class="fas fa-sync-alt"></i> Load Statistics
-        </button>
         
-        <div id="overall-stats-container" style="display: none;">
+        <div id="overall-stats-container">
         <div id="overall-stats">
           <div class="stats-grid">
             <div class="stat-card">
@@ -118,13 +115,30 @@
             </div>
           </div>
           
-          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 12px 0;">
-            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Overall Status Distribution</h3>
+          <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 14px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h3 style="margin: 0; color: #6366f1; font-size: 14px;">Overall Status Distribution</h3>
+              <select id="overall-chart-date-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="15days">Last 15 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            <div id="overall-custom-date-range" style="display: none; margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+              <input type="date" id="overall-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <span style="color: #6b7280;">to</span>
+              <input type="date" id="overall-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <button onclick="applyOverallCustomDateFilter()" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Apply</button>
+            </div>
             <canvas id="overallStatusChart" style="max-height: 300px;"></canvas>
           </div>
           
-          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 12px 0;">
-            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Leads by User</h3>
+          <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 14px 0;">
+            <h3 style="text-align: center; color: #6366f1; margin-bottom: 14px; font-size: 14px;">Leads by User</h3>
             <canvas id="userLeadsChart" style="max-height: 300px;"></canvas>
           </div>
         </div>
@@ -135,27 +149,27 @@
       <div class="card" id="overall-performance-card">
         <h2>Overall Performance</h2>
         <div id="overall-performance-body">
-          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
-            <h3 style="text-align: center; color: #047857; margin-bottom: 16px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <h3 style="text-align: center; color: #047857; margin-bottom: 18px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
               <i class="fas fa-chart-line"></i>
               Overall Performance Metrics
             </h3>
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Total Conversion Rate</span>
                 <span id="overall-conversion-rate" style="font-weight: 700; color: #047857; font-size: 16px;">0%</span>
               </div>
-              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Avg. Follow-ups per Lead</span>
                 <span id="overall-avg-followups" style="font-weight: 700; color: #6366f1; font-size: 16px;">0</span>
               </div>
-              <div style="display: flex; justify-content: space-between; padding: 10px; background: #f9fafb; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Total Active Leads</span>
                 <span id="overall-active-leads" style="font-weight: 700; color: #0369a1; font-size: 16px;">0</span>
               </div>
             </div>
           </div>
-          <p style="margin-top:12px; font-size:12px; color:#6b7280;">Metrics are populated when you click <strong>Load Statistics</strong> in the Overall Dashboard section.</p>
+          <p style="margin-top:14px; font-size:12px; color:#6b7280;">Metrics are automatically loaded when you open the dashboard.</p>
         </div>
       </div>
       
@@ -171,23 +185,19 @@
             </div>
             <small style="color: #9ca3af; display: block; margin-top: 4px; font-size: 12px;">Select one or more users. Leads will be distributed equally.</small>
           </div>
-          
           <div class="form-group">
             <label for="file-upload">Excel File</label>
             <input type="file" id="file-upload" name="file" accept=".xlsx,.xls" required>
           </div>
-          
           <button type="submit" class="btn btn-primary">
             <i class="fas fa-upload"></i> Upload Leads
           </button>
         </form>
-        
         <div id="upload-message" class="message" style="display: none;"></div>
-        <div id="upload-distribution" class="info-box" style="display:none; margin-top:12px;"></div>
-        
+        <div id="upload-distribution" class="info-box" style="display:none; margin-top:14px;"></div>
         <div class="info-box">
           <h4>Required Excel Columns:</h4>
-          <p style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Use the exact column headers below (case-insensitive):</p>
+          <p style="font-size: 12px; color: #6b7280; margin-bottom: 10px;">Use the exact column headers below (case-insensitive):</p>
           <ul style="columns:2; gap:12px;">
             <li>Name</li>
             <li>Contact</li>
@@ -202,86 +212,7 @@
           <p style="font-size:11px; color:#9ca3af; margin-top:8px;">Extra columns are ignored. Status defaults to "Fresh" if omitted.</p>
         </div>
       </div>
-      
-      <!-- Create User Section -->
-      <div class="card">
-        <h2 class="collapsible-header" onclick="toggleCreateUser()">
-          Create New User
-          <span id="create-user-toggle" class="collapse-icon">+</span>
-        </h2>
-        <div id="create-user-body" style="display:none;">
-        <form id="create-user-form">
-          <div class="form-group">
-            <label for="new-user-name">Name</label>
-            <input type="text" id="new-user-name" required>
-          </div>
-          
-          <div class="form-group">
-            <label for="new-user-email">Email</label>
-            <input type="email" id="new-user-email" required>
-          </div>
-          
-          <div class="form-group">
-            <label for="new-user-password">Password</label>
-            <input type="password" id="new-user-password" required>
-          </div>
-          
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-user-plus"></i> Create User
-          </button>
-        </form>
-        
-        <div id="create-user-message" class="message" style="display: none;"></div>
-        </div>
-      </div>
 
-      <!-- Admin Password Reset Section -->
-      <div class="card">
-        <h2 class="collapsible-header" onclick="toggleAdminPassword()">
-          Reset Admin Password
-          <span id="admin-password-toggle" class="collapse-icon">+</span>
-        </h2>
-        <div id="admin-password-body" style="display:none;">
-        <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">Change your admin account password.</p>
-        <form id="admin-password-form">
-          <div class="form-group">
-            <label for="admin-new-password">New Password</label>
-            <input type="password" id="admin-new-password" placeholder="Minimum 8 characters" required>
-          </div>
-          
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-key"></i> Reset My Password
-          </button>
-        </form>
-        
-        <div id="admin-password-message" class="message" style="display: none;"></div>
-        </div>
-      </div>
-
-      <!-- Manage Users Section (Collapsible) -->
-      <div class="card" id="manage-users-card">
-        <h2 class="collapsible-header" onclick="toggleManageUsers()">
-          Manage Users
-          <span id="manage-users-toggle" class="collapse-icon">+</span>
-        </h2>
-        <div id="manage-users-body" style="display:none;">
-          <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">View user details, lead counts, reset passwords, and remove users without assigned leads.</p>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Leads</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="users-tbody"></tbody>
-          </table>
-          <div id="users-message" class="message" style="display:none; margin-top:12px;"></div>
-        </div>
-      </div>
-      
       <!-- User Progress Section -->
       <div class="card">
         <h2 class="collapsible-header" onclick="toggleUserProgress()">
@@ -301,30 +232,47 @@
         </div>
         
         <div id="user-progress" style="display: none;">
-          <h3 id="progress-user-name" style="color: #111827; font-size: 15px; margin-bottom: 16px;"></h3>
+          <h3 id="progress-user-name" style="color: #111827; font-size: 15px; margin-bottom: 18px;"></h3>
           
           <!-- Status Chart -->
-          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 16px;">
-            <h3 style="text-align: center; color: #6366f1; margin-bottom: 12px; font-size: 14px;">Lead Status Distribution</h3>
+          <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 18px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h3 style="margin: 0; color: #6366f1; font-size: 14px;">Lead Status Distribution</h3>
+              <select id="user-chart-date-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="15days">Last 15 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            <div id="user-custom-date-range" style="display: none; margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+              <input type="date" id="user-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <span style="color: #6b7280;">to</span>
+              <input type="date" id="user-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <button onclick="applyUserCustomDateFilter()" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Apply</button>
+            </div>
             <canvas id="statusChart" style="max-height: 300px;"></canvas>
           </div>
           
           <!-- User Performance Metrics -->
-          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 16px;">
-            <h3 style="text-align: center; color: #047857; margin-bottom: 16px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 18px;">
+            <h3 style="text-align: center; color: #047857; margin-bottom: 18px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
               <i class="fas fa-chart-line"></i>
               Performance Metrics
             </h3>
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Conversion Rate</span>
                 <span id="user-conversion-rate" style="font-weight: 700; color: #047857; font-size: 16px;">0%</span>
               </div>
-              <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Avg. Follow-ups per Lead</span>
                 <span id="user-avg-followups" style="font-weight: 700; color: #6366f1; font-size: 16px;">0</span>
               </div>
-              <div style="display: flex; justify-content: space-between; padding: 10px; background: #f9fafb; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; padding: 12px; background: #f9fafb; border-radius: 4px;">
                 <span style="color: #6b7280; font-size: 14px; font-weight: 500;">Active Leads</span>
                 <span id="user-active-leads" style="font-weight: 700; color: #0369a1; font-size: 16px;">0</span>
               </div>
@@ -360,6 +308,76 @@
           </table>
         </div>
       </div>
+        </div>
+      </div>
+
+      <!-- Manage Brochures Section -->
+      <div class="card" id="manage-brochures-card">
+        <h2 style="display:flex; justify-content:space-between; align-items:center;">
+          <span><i class="fas fa-file-pdf" style="margin-right: 8px; color: #e11d48;"></i>Manage Brochures</span>
+          <button onclick="openAddBrochureModal()" class="btn btn-primary" style="font-size: 13px;">
+            <i class="fas fa-plus"></i> Add Brochure
+          </button>
+        </h2>
+        <div style="margin-top: 18px;">
+          <button onclick="loadBrochuresAdmin()" class="btn btn-secondary" style="font-size: 13px; margin-bottom: 14px;">
+            <i class="fas fa-sync"></i> Refresh
+          </button>
+          <div id="brochures-admin-list">
+            <p style="color: #9ca3af; text-align: center; padding: 20px 0;">Click refresh to load brochures...</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Settings Section -->
+      <div class="card" id="settings-card">
+        <h2><i class="fas fa-cog" style="margin-right: 8px; color: #6366f1;"></i>Settings</h2>
+        
+        <!-- Manage Users Subsection -->
+        <div style="margin-top: 22px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <h3 style="margin:0; font-size:16px; color:#111827;"><i class="fas fa-users" style="margin-right:8px;"></i>Manage Users</h3>
+            <button onclick="openCreateUserModal()" class="btn btn-primary" style="font-size: 13px;">
+              <i class="fas fa-user-plus"></i> Create User
+            </button>
+          </div>
+          <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">View user details, lead counts, reset passwords, and remove users without assigned leads.</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Leads</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+          <div id="users-message" class="message" style="display:none; margin-top:12px;"></div>
+        </div>
+
+        <!-- Admin Password Reset Subsection -->
+        <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+          <h3 style="margin:0 0 12px 0; font-size:16px; color:#111827;"><i class="fas fa-key" style="margin-right:8px;"></i>Reset Admin Password</h3>
+          <p style="margin-bottom:12px; color:#6b7280; font-size:13px;">Change your admin account password.</p>
+          <form id="admin-password-form">
+            <div class="form-group">
+              <label for="admin-new-password">New Password</label>
+              <input type="password" id="admin-new-password" placeholder="Minimum 8 characters" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="admin-confirm-password">Confirm Password</label>
+              <input type="password" id="admin-confirm-password" placeholder="Re-enter password" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-key"></i> Reset My Password
+            </button>
+          </form>
+          
+          <div id="admin-password-message" class="message" style="display: none;"></div>
         </div>
       </div>
       
@@ -457,6 +475,87 @@
       </div>
     </div>
   </div>
+
+  <!-- Add Brochure Modal -->
+  <div id="add-brochure-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:8px; padding:24px; width:90%; max-width:500px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="margin:0; font-size:20px; color:#111827;"><i class="fas fa-file-pdf" style="margin-right:8px; color:#e11d48;"></i>Add New Brochure</h2>
+        <button onclick="closeAddBrochureModal()" style="background:none; border:none; font-size:24px; color:#9ca3af; cursor:pointer; padding:0; width:32px; height:32px;">&times;</button>
+      </div>
+      <form id="upload-brochure-form" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="brochure-university">University</label>
+          <input type="text" id="brochure-university" name="university" required placeholder="e.g. Amity University">
+        </div>
+        <div class="form-group">
+          <label for="brochure-course">Course</label>
+          <input type="text" id="brochure-course" name="course" required placeholder="e.g. BBA">
+        </div>
+        <div class="form-group">
+          <label for="brochure-file">Brochure PDF</label>
+          <input type="file" id="brochure-file" name="file" accept="application/pdf" required>
+        </div>
+        <div style="display:flex; gap:12px; margin-top:20px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">
+            <i class="fas fa-upload"></i> Upload Brochure
+          </button>
+          <button type="button" onclick="closeAddBrochureModal()" class="btn btn-secondary" style="flex:1;">
+            Cancel
+          </button>
+        </div>
+      </form>
+      <div id="upload-brochure-message" class="message" style="display:none; margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- Create User Modal -->
+  <div id="create-user-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:8px; padding:24px; width:90%; max-width:500px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="margin:0; font-size:20px; color:#111827;"><i class="fas fa-user-plus" style="margin-right:8px; color:#6366f1;"></i>Create New User</h2>
+        <button onclick="closeCreateUserModal()" style="background:none; border:none; font-size:24px; color:#9ca3af; cursor:pointer; padding:0; width:32px; height:32px;">&times;</button>
+      </div>
+      <form id="create-user-form">
+        <div class="form-group">
+          <label for="new-user-name">Name</label>
+          <input type="text" id="new-user-name" required placeholder="Full name">
+        </div>
+        
+        <div class="form-group">
+          <label for="new-user-email">Email</label>
+          <input type="email" id="new-user-email" required placeholder="email@example.com">
+        </div>
+        
+        <div class="form-group">
+          <label for="new-user-password">Password</label>
+          <input type="password" id="new-user-password" required placeholder="Minimum 8 characters">
+        </div>
+        
+        <div class="form-group">
+          <label for="new-user-confirm-password">Confirm Password</label>
+          <input type="password" id="new-user-confirm-password" required placeholder="Re-enter password">
+        </div>
+        
+        <div style="display:flex; gap:12px; margin-top:20px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">
+            <i class="fas fa-user-plus"></i> Create User
+          </button>
+          <button type="button" onclick="closeCreateUserModal()" class="btn btn-secondary" style="flex:1;">
+            Cancel
+          </button>
+        </div>
+      </form>
+      
+      <div id="create-user-message" class="message" style="display: none; margin-top:16px;"></div>
+    </div>
+  </div>
+  
+  <!-- Footer -->
+  <footer style="position:fixed; bottom:0; left:260px; right:0; padding:10px 20px; background:rgba(249,250,251,0.95); border-top:1px solid #e5e7eb; font-size:11px; color:#6b7280; text-align:center; z-index:100; backdrop-filter: blur(8px);">
+    <span>© 2025 DegreeDrishti. All rights reserved.</span>
+    <span style="margin-left:16px; color:#9ca3af;">Developed by Samarth</span>
+  </footer>
   
   <script src="js/config.js"></script>
   <script src="js/admin.js"></script>

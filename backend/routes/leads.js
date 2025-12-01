@@ -45,7 +45,9 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Lead not found' });
     }
     
-    const { status } = req.body;
+    const { status, nextCallDateTime } = req.body;
+    
+    // Update status if provided
     if (status && status !== lead.status) {
       lead.statusHistory = lead.statusHistory || [];
       lead.statusHistory.push({
@@ -54,6 +56,11 @@ router.put('/:id', auth, async (req, res) => {
         changedBy: req.userId
       });
       lead.status = status;
+    }
+    
+    // Update next call date/time if provided (can be null to clear)
+    if (nextCallDateTime !== undefined) {
+      lead.nextCallDateTime = nextCallDateTime ? new Date(nextCallDateTime) : null;
     }
     
     lead.lastContactDate = new Date();

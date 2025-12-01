@@ -1,3 +1,252 @@
+// Load brochures on dashboard
+let allBrochures = [];
+document.addEventListener('DOMContentLoaded', loadBrochures);
+
+async function loadBrochures() {
+  const listDiv = document.getElementById('brochures-list');
+  if (!listDiv) return;
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/brochures`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const brochures = await response.json();
+    allBrochures = brochures;
+    
+    // Populate university and course filters
+    populateFilters(brochures);
+    
+    // Display brochures
+    displayBrochures(brochures);
+  } catch (error) {
+    listDiv.innerHTML = '<p style="color: #e11d48; font-size: 14px; text-align: center; padding: 20px 0;">Error loading brochures.</p>';
+    console.error('Error loading brochures:', error);
+  }
+}
+
+function populateFilters(brochures) {
+  const univSelect = document.getElementById('filter-university');
+  if (!univSelect) return;
+  
+  // Get unique universities
+  const universities = [...new Set(brochures.map(b => b.university))].sort();
+  
+  univSelect.innerHTML = '<option value="">Select University</option>';
+  universities.forEach(u => {
+    univSelect.innerHTML += `<option value="${u}">${u}</option>`;
+  });
+  
+  // Add event listener
+  univSelect.addEventListener('change', filterBrochures);
+}
+
+function filterBrochures() {
+  const univFilter = document.getElementById('filter-university').value;
+  
+  // Show section if university is selected
+  const brochuresSection = document.getElementById('brochures-section');
+  if (univFilter) {
+    brochuresSection.style.display = 'block';
+  }
+  
+  let filtered = allBrochures;
+  if (univFilter) {
+    filtered = filtered.filter(b => b.university === univFilter);
+  }
+  
+  displayBrochures(filtered);
+}
+
+function displayBrochures(brochures) {
+  const listDiv = document.getElementById('brochures-list');
+  if (!listDiv) return;
+  
+  if (Array.isArray(brochures) && brochures.length > 0) {
+    listDiv.innerHTML = '';
+    // Group by university
+    const grouped = {};
+    brochures.forEach(b => {
+      if (!grouped[b.university]) grouped[b.university] = [];
+      grouped[b.university].push(b);
+    });
+    
+    Object.keys(grouped).sort().forEach(univ => {
+      const univId = 'univ-' + univ.replace(/[^a-z0-9]/gi, '_');
+      const courseCount = grouped[univ].length;
+      
+      const univDiv = document.createElement('div');
+      univDiv.className = 'brochure-university';
+      univDiv.style.cssText = 'margin-bottom:16px; border:1px solid #e5e7eb; border-radius:8px; background:white; overflow:hidden;';
+      
+      // University header (collapsible)
+      const headerDiv = document.createElement('div');
+      headerDiv.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#f9fafb; cursor:pointer; border-bottom:1px solid #e5e7eb;';
+      headerDiv.onclick = () => toggleUniversityBrochures(univId);
+      headerDiv.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px;">
+          <i class="fas fa-university" style="color:#2563eb;"></i>
+          <h4 style="margin:0; color:#111827; font-size:15px;">${univ}</h4>
+          <span style="background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600;">${courseCount} ${courseCount === 1 ? 'Course' : 'Courses'}</span>
+        </div>
+        <i id="${univId}-icon" class="fas fa-chevron-down" style="color:#6b7280; transition:transform 0.3s;"></i>
+      `;
+      univDiv.appendChild(headerDiv);
+      
+      // Courses container (collapsible)
+      const coursesDiv = document.createElement('div');
+      coursesDiv.id = univId;
+      coursesDiv.style.cssText = 'max-height:0; overflow:hidden; transition:max-height 0.3s ease-out;';
+      
+      const coursesInner = document.createElement('div');
+      coursesInner.style.cssText = 'padding:12px;';
+      
+      grouped[univ].forEach(brochure => {
+        const item = document.createElement('div');
+        item.className = 'brochure-item';
+        item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid #e5e7eb; border-radius:6px; margin-bottom:8px; background:#fafafa; transition:all 0.2s;';
+        item.onmouseenter = (e) => { e.currentTarget.style.background = '#f0f9ff'; e.currentTarget.style.borderColor = '#bfdbfe'; };
+        item.onmouseleave = (e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#e5e7eb'; };
+        item.innerHTML = `
+          <span style="font-weight:500; color:#374151; display:flex; align-items:center; gap:8px;">
+            <i class="fas fa-book" style="color:#6366f1; font-size:12px;"></i>
+            ${brochure.course}
+          </span>
+          <div style="display:flex; gap:8px;">
+            <a href="http://localhost:5000/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-eye"></i> View</a>
+            <button onclick="downloadBrochure('${brochure.filePath}', '${brochure.university}-${brochure.course}-brochure.pdf')" class="btn btn-primary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-download"></i> Download</button>
+          </div>
+        `;
+        coursesInner.appendChild(item);
+      });
+      
+      coursesDiv.appendChild(coursesInner);
+      univDiv.appendChild(coursesDiv);
+      listDiv.appendChild(univDiv);
+    });
+  } else {
+    listDiv.innerHTML = '<p style="color: #9ca3af; font-size: 14px; text-align: center; padding: 20px 0;">No brochures match your selection.</p>';
+  }
+}
+
+function toggleUniversityBrochures(univId) {
+  const container = document.getElementById(univId);
+  const icon = document.getElementById(univId + '-icon');
+  
+  if (container.style.maxHeight === '0px' || !container.style.maxHeight) {
+    // Expand
+    container.style.maxHeight = container.scrollHeight + 'px';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    // Collapse
+    container.style.maxHeight = '0px';
+    icon.style.transform = 'rotate(0deg)';
+  }
+}
+
+function downloadBrochure(filePath, fileName) {
+  fetch(`http://localhost:5000/${filePath}`)
+    .then(response => response.blob())
+    .then(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    })
+    .catch(error => {
+      console.error('Error downloading brochure:', error);
+      alert('Error downloading brochure');
+    });
+}
+
+async function downloadAllBrochures() {
+  try {
+    const token = getToken();
+    if (!token) {
+      alert('Please login to download brochures');
+      return;
+    }
+
+    // Show loading indicator
+    const button = event.target.closest('button');
+    const originalHTML = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing ZIP...';
+
+    const response = await fetch(`${API_URL}/admin/brochures/download-all`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to download brochures');
+    }
+
+    // Get the blob from response
+    const blob = await response.blob();
+    
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'brochures.zip';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    // Reset button
+    button.disabled = false;
+    button.innerHTML = originalHTML;
+    
+    // Show success message
+    alert('All brochures downloaded successfully!');
+  } catch (error) {
+    console.error('Error downloading all brochures:', error);
+    alert('Error downloading brochures: ' + error.message);
+    
+    // Reset button in case of error
+    const button = event.target.closest('button');
+    button.disabled = false;
+    button.innerHTML = '<i class="fas fa-download"></i> Download All as ZIP';
+  }
+}
+
+function downloadBulkBrochures() {
+  const univFilter = document.getElementById('filter-university').value;
+  if (!univFilter) {
+    alert('Please select a university to download all its brochures.');
+    return;
+  }
+  
+  const filtered = allBrochures.filter(b => b.university === univFilter);
+  if (filtered.length === 0) {
+    alert('No brochures found for this university.');
+    return;
+  }
+  
+  // Download each brochure
+  filtered.forEach((brochure, index) => {
+    setTimeout(() => {
+      const link = document.createElement('a');
+      link.href = `http://localhost:5000/${brochure.filePath}`;
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }, index * 500); // Stagger downloads by 500ms
+  });
+  
+  alert(`Downloading ${filtered.length} brochure(s) for ${univFilter}...`);
+}
+
 // Check authentication
 const user = getUser();
 if (!user || user.role !== 'user') {
@@ -43,6 +292,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (leadsSection) {
           const yOffset = -80;
           const y = leadsSection.getBoundingClientRect().top + window.pageYOffset + yOffset;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      } else if (section === 'brochures') {
+        const brochuresSection = document.getElementById('brochures-section');
+        if (brochuresSection) {
+          brochuresSection.style.display = 'block';
+          const yOffset = -80;
+          const y = brochuresSection.getBoundingClientRect().top + window.pageYOffset + yOffset;
           window.scrollTo({ top: y, behavior: 'smooth' });
         }
       } else if (section === 'analytics') {
@@ -107,60 +364,8 @@ function updateAnalytics() {
     statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
   });
   
-  // Create status chart
-  const ctx = document.getElementById('user-status-chart');
-  if (ctx) {
-    const labels = Object.keys(statusBreakdown);
-    const data = Object.values(statusBreakdown);
-    
-    const colors = {
-      'Fresh': '#0369a1',
-      'Buffer fresh': '#1d4ed8',
-      'Did not pick': '#374151',
-      'Request call back': '#6d28d9',
-      'Follow up': '#b45309',
-      'Counselled': '#047857',
-      'Interested in next batch': '#4338ca',
-      'Registration fees paid': '#0f766e',
-      'Enrolled': '#065f46',
-      'Junk/not interested': '#b91c1c'
-    };
-    
-    const backgroundColors = labels.map(label => colors[label] || '#667eea');
-    
-    if (userStatusChart) {
-      userStatusChart.destroy();
-    }
-    
-    userStatusChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: 'Leads',
-          data: data,
-          backgroundColor: backgroundColors,
-          borderWidth: 1,
-          borderColor: backgroundColors
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function(context) { return context.parsed.y + ' leads'; }
-            }
-          }
-        },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 } }
-        }
-      }
-    });
-  }
+  // Use the new updateUserStatusChart function
+  updateUserStatusChart(statusBreakdown);
   
   // Performance metrics
   const enrolled = allLeads.filter(l => l.status === 'Enrolled').length;
@@ -322,9 +527,8 @@ function displayLeads() {
   }
 }
 
-function openLeadModal(lead) {
+async function openLeadModal(lead) {
   currentLead = lead;
-  
   document.getElementById('modal-lead-name').textContent = lead.name;
   document.getElementById('modal-lead-contact').textContent = lead.contact || 'N/A';
   document.getElementById('modal-lead-email').textContent = lead.email || 'N/A';
@@ -333,11 +537,84 @@ function openLeadModal(lead) {
   document.getElementById('modal-lead-course').textContent = lead.course || 'N/A';
   document.getElementById('modal-lead-profession').textContent = lead.profession || 'N/A';
   document.getElementById('modal-lead-status').value = lead.status;
-  
+
+  // Fetch brochure for this university/course
+  const brochureDiv = document.getElementById('modal-lead-brochure');
+  brochureDiv.innerHTML = '<span style="color:#9ca3af;">Checking for brochure...</span>';
+  let brochureUrl = null;
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/brochures?university=${encodeURIComponent(lead.university)}&course=${encodeURIComponent(lead.course)}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const brochures = await response.json();
+    if (Array.isArray(brochures) && brochures.length > 0) {
+      const b = brochures[0];
+      brochureUrl = `http://localhost:5000/${b.filePath}`;
+      brochureDiv.innerHTML = `
+        <div style="display:flex; gap:8px;">
+          <a href="${brochureUrl}" target="_blank" class="btn btn-secondary"><i class="fas fa-eye"></i> View Brochure</a>
+          <button onclick="downloadBrochure('${b.filePath}', '${lead.university}-${lead.course}-brochure.pdf')" class="btn btn-primary"><i class="fas fa-download"></i> Download Brochure</button>
+        </div>
+      `;
+    } else {
+      brochureDiv.innerHTML = '<span style="color:#e11d48;">No brochure available for this course/university.</span>';
+    }
+  } catch (error) {
+    brochureDiv.innerHTML = '<span style="color:#e11d48;">Error loading brochure.</span>';
+  }
+
+  // WhatsApp message button
+  const whatsappDiv = document.getElementById('modal-lead-whatsapp');
+  if (lead.contact) {
+    // Get logged-in user's name
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const userName = userData.name || 'DD CRM Team';
+    
+    const message = encodeURIComponent(
+      `Hello ${lead.name},\n\nThank you for your interest in ${lead.course} at ${lead.university}. Below you can find the brochure for your reference.\n\nIf you have any questions, feel free to reply here.\n\nBest regards,\n${userName}`
+    );
+    const phone = lead.contact.replace(/\D/g, '');
+    // Use whatsapp:// protocol for desktop app integration
+    let waUrl = `whatsapp://send?phone=${phone}&text=${message}`;
+    whatsappDiv.innerHTML = `<a href="${waUrl}" class="btn btn-success" style="text-decoration:none;"><i class="fab fa-whatsapp"></i> Send WhatsApp Message</a>`;
+    if (!brochureUrl) {
+      whatsappDiv.innerHTML += `<div style='color:#e11d48; font-size:12px; margin-top:4px;'>Brochure not available for this course/university.</div>`;
+    }
+  } else {
+    whatsappDiv.innerHTML = '<span style="color:#e11d48;">No contact number available for WhatsApp.</span>';
+  }
+
   displayStatusHistory(lead.statusHistory || []);
   displayNotes(lead.notes);
   
+  // Display next call date if exists
+  displayFollowUpSchedule(lead.nextCallDateTime);
+  
   document.getElementById('lead-modal').style.display = 'flex';
+}
+
+function displayFollowUpSchedule(nextCallDateTime) {
+  const input = document.getElementById('modal-followup-datetime');
+  const display = document.getElementById('current-followup-display');
+  const displayTime = document.getElementById('followup-display-time');
+  
+  if (nextCallDateTime) {
+    // Convert to local datetime format for input
+    const date = new Date(nextCallDateTime);
+    const localDateTime = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    input.value = localDateTime;
+    
+    // Show scheduled time
+    displayTime.textContent = date.toLocaleString();
+    display.style.display = 'block';
+  } else {
+    input.value = '';
+    display.style.display = 'none';
+  }
 }
 
 function closeModal() {
@@ -550,3 +827,503 @@ function showMessage(message, type) {
     messageDiv.style.display = 'none';
   }, 4000);
 }
+
+// ============ Date Filter Functions for User Dashboard ============
+
+// Date range calculation helper
+function getDateRange(filterValue, customStart = null, customEnd = null) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  switch(filterValue) {
+    case 'today':
+      return { start: today, end: new Date() };
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return { start: yesterday, end: today };
+    
+    case 'week':
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() - today.getDay()); // Start of week (Sunday)
+      return { start: weekStart, end: new Date() };
+    
+    case '15days':
+      const days15 = new Date(today);
+      days15.setDate(days15.getDate() - 15);
+      return { start: days15, end: new Date() };
+    
+    case '30days':
+      const days30 = new Date(today);
+      days30.setDate(days30.getDate() - 30);
+      return { start: days30, end: new Date() };
+    
+    case 'custom':
+      if (customStart && customEnd) {
+        return { start: new Date(customStart), end: new Date(customEnd + 'T23:59:59') };
+      }
+      return null;
+    
+    case 'all':
+    default:
+      return null;
+  }
+}
+
+// Filter leads by date range
+function filterLeadsByDateRange(leads, dateRange) {
+  if (!dateRange) return leads;
+  
+  return leads.filter(lead => {
+    const leadDate = new Date(lead.updatedAt || lead.createdAt);
+    return leadDate >= dateRange.start && leadDate <= dateRange.end;
+  });
+}
+
+// User status chart date filter
+document.addEventListener('DOMContentLoaded', () => {
+  const statusFilter = document.getElementById('user-status-date-filter');
+  if (statusFilter) {
+    statusFilter.addEventListener('change', function() {
+      const customRange = document.getElementById('user-status-custom-date-range');
+      if (this.value === 'custom') {
+        customRange.style.display = 'flex';
+      } else {
+        customRange.style.display = 'none';
+        applyUserStatusDateFilter(this.value);
+      }
+    });
+  }
+});
+
+function applyUserStatusDateFilter(filterValue) {
+  if (!allLeads || allLeads.length === 0) return;
+  
+  const dateRange = getDateRange(filterValue);
+  const filteredLeads = filterLeadsByDateRange(allLeads, dateRange);
+  
+  // Calculate status breakdown
+  const statusBreakdown = {};
+  filteredLeads.forEach(lead => {
+    const status = lead.status || 'Unknown';
+    statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+  });
+  
+  // Update chart with filtered data
+  updateUserStatusChart(statusBreakdown);
+}
+
+function applyUserStatusCustomDateFilter() {
+  const startDate = document.getElementById('user-status-start-date').value;
+  const endDate = document.getElementById('user-status-end-date').value;
+  
+  if (!startDate || !endDate) {
+    alert('Please select both start and end dates');
+    return;
+  }
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    alert('Start date must be before end date');
+    return;
+  }
+  
+  const dateRange = getDateRange('custom', startDate, endDate);
+  const filteredLeads = filterLeadsByDateRange(allLeads, dateRange);
+  
+  const statusBreakdown = {};
+  filteredLeads.forEach(lead => {
+    const status = lead.status || 'Unknown';
+    statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+  });
+  
+  updateUserStatusChart(statusBreakdown);
+}
+
+// Separate function to update user status chart
+function updateUserStatusChart(statusBreakdown) {
+  const ctx = document.getElementById('user-status-chart');
+  if (!ctx) return;
+  
+  const labels = Object.keys(statusBreakdown);
+  const data = Object.values(statusBreakdown);
+  
+  const colors = {
+    'Fresh': '#0369a1',
+    'Buffer fresh': '#1d4ed8',
+    'Did not pick': '#374151',
+    'Request call back': '#6d28d9',
+    'Follow up': '#b45309',
+    'Counselled': '#047857',
+    'Interested in next batch': '#4338ca',
+    'Registration fees paid': '#0f766e',
+    'Enrolled': '#065f46',
+    'Junk/not interested': '#b91c1c'
+  };
+  
+  const backgroundColors = labels.map(label => colors[label] || '#667eea');
+  
+  if (userStatusChart) {
+    userStatusChart.destroy();
+  }
+  
+  userStatusChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Leads',
+        data: data,
+        backgroundColor: backgroundColors,
+        borderWidth: 1,
+        borderColor: backgroundColors
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) { return context.parsed.y + ' leads'; }
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+      }
+    }
+  });
+}
+
+// ============ Follow-up Scheduling and Reminder System ============
+
+async function scheduleFollowUp() {
+  if (!currentLead) return;
+  
+  const dateTimeInput = document.getElementById('modal-followup-datetime');
+  const dateTimeValue = dateTimeInput.value;
+  
+  if (!dateTimeValue) {
+    alert('Please select a date and time for the follow-up');
+    return;
+  }
+  
+  const followUpDate = new Date(dateTimeValue);
+  const now = new Date();
+  
+  if (followUpDate <= now) {
+    alert('Follow-up time must be in the future');
+    return;
+  }
+  
+  try {
+    const response = await apiCall(`/leads/${currentLead._id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nextCallDateTime: followUpDate.toISOString() })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Update local data
+      const index = allLeads.findIndex(l => l._id === currentLead._id);
+      if (index !== -1) {
+        allLeads[index] = data;
+      }
+      
+      currentLead = data;
+      displayFollowUpSchedule(data.nextCallDateTime);
+      showMessage('Follow-up reminder scheduled successfully!', 'success');
+      
+      // Start checking for this reminder
+      checkReminders();
+    }
+  } catch (error) {
+    console.error('Error scheduling follow-up:', error);
+    showMessage('Failed to schedule follow-up', 'error');
+  }
+}
+
+async function clearFollowUp() {
+  if (!currentLead) return;
+  
+  try {
+    const response = await apiCall(`/leads/${currentLead._id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nextCallDateTime: null })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Update local data
+      const index = allLeads.findIndex(l => l._id === currentLead._id);
+      if (index !== -1) {
+        allLeads[index] = data;
+      }
+      
+      currentLead = data;
+      displayFollowUpSchedule(null);
+      showMessage('Follow-up reminder cleared', 'success');
+    }
+  } catch (error) {
+    console.error('Error clearing follow-up:', error);
+    showMessage('Failed to clear follow-up', 'error');
+  }
+}
+
+// Reminder checking system
+let reminderCheckInterval = null;
+let shownReminders = new Set(); // Track shown reminders to avoid duplicates
+let snoozedReminders = new Map(); // Track snoozed reminders
+let activeReminders = []; // Store all active reminders for notification panel
+
+function startReminderSystem() {
+  // Check every 30 seconds
+  if (reminderCheckInterval) {
+    clearInterval(reminderCheckInterval);
+  }
+  
+  reminderCheckInterval = setInterval(() => {
+    checkReminders();
+  }, 30000);
+  
+  // Check immediately on start
+  checkReminders();
+}
+
+function checkReminders() {
+  const now = new Date();
+  
+  // Clear old active reminders
+  activeReminders.length = 0;
+  
+  allLeads.forEach(lead => {
+    if (!lead.nextCallDateTime) return;
+    
+    const followUpTime = new Date(lead.nextCallDateTime);
+    const timeDiff = followUpTime - now;
+    const leadKey = lead._id + '-' + lead.nextCallDateTime;
+    
+    // Check if snoozed
+    const snoozeTime = snoozedReminders.get(lead._id);
+    if (snoozeTime && now < snoozeTime) {
+      return; // Still snoozed
+    }
+    
+    // Add to active reminders if within 5 minutes of follow-up time
+    if (timeDiff > 0 && timeDiff <= 300000) {
+      activeReminders.push({
+        lead: lead,
+        isOverdue: false,
+        time: followUpTime
+      });
+      
+      // Show popup for first-time reminder
+      if (!shownReminders.has(leadKey)) {
+        showReminderPopup(lead);
+        shownReminders.add(leadKey);
+      }
+    }
+    
+    // Add to active reminders if overdue (up to 1 hour)
+    if (timeDiff < 0 && timeDiff > -3600000) {
+      activeReminders.push({
+        lead: lead,
+        isOverdue: true,
+        time: followUpTime
+      });
+      
+      // Show popup for first-time overdue reminder
+      if (!shownReminders.has(leadKey)) {
+        showReminderPopup(lead, true);
+        shownReminders.add(leadKey);
+      }
+    }
+  });
+  
+  // Update notification panel
+  updateNotificationPanel();
+}
+
+let currentReminderLead = null;
+
+function showReminderPopup(lead, isOverdue = false) {
+  currentReminderLead = lead;
+  
+  const popup = document.getElementById('reminder-popup');
+  const message = document.getElementById('reminder-message');
+  const leadName = document.getElementById('reminder-lead-name');
+  const leadContact = document.getElementById('reminder-lead-contact');
+  const leadEmail = document.getElementById('reminder-lead-email');
+  
+  if (isOverdue) {
+    message.textContent = 'Overdue follow-up! You missed this lead:';
+  } else {
+    message.textContent = 'Time to follow up with this lead:';
+  }
+  
+  leadName.textContent = lead.name || 'Unknown';
+  leadContact.textContent = lead.contact || 'N/A';
+  leadEmail.textContent = lead.email || 'N/A';
+  
+  popup.style.display = 'block';
+  
+  // Play notification sound if available
+  try {
+    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBzGJ0fDRgTYIGGS15+mZTgwOTKXh77BhGwU7k9buxXMpBSl+zO/aizsKE16y6eaoVRQKRp/g8r5sIQcxidHw0YE2CBhkteXnmU4MDkyl4e+wYRsFO5PW7sVzKQUpfszt2os7ChNesunn');
+    audio.play().catch(() => {});
+  } catch (e) {}
+}
+
+function closeReminderPopup() {
+  const popup = document.getElementById('reminder-popup');
+  popup.style.display = 'none';
+  currentReminderLead = null;
+}
+
+function openLeadFromReminder() {
+  if (!currentReminderLead) return;
+  
+  closeReminderPopup();
+  
+  // Fetch fresh lead data to ensure we have the latest
+  const token = getToken();
+  fetch(`${API_URL}/leads/${currentReminderLead._id}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Failed to fetch lead');
+    }
+    return response.json();
+  })
+  .then(lead => {
+    openLeadModal(lead);
+  })
+  .catch(error => {
+    console.error('Error loading lead:', error);
+    showMessage('Error loading lead details', 'error');
+  });
+}
+
+function snoozeReminder() {
+  if (!currentReminderLead) return;
+  
+  // Snooze for 15 minutes
+  const snoozeUntil = new Date(Date.now() + 15 * 60 * 1000);
+  snoozedReminders.set(currentReminderLead._id, snoozeUntil);
+  
+  // Remove from shown reminders so it can appear again after snooze
+  const leadKey = currentReminderLead._id + '-' + currentReminderLead.nextCallDateTime;
+  shownReminders.delete(leadKey);
+  
+  closeReminderPopup();
+  showMessage('Reminder snoozed for 15 minutes', 'success');
+}
+
+// Notification Panel Functions
+function toggleNotificationPanel() {
+  const panel = document.getElementById('notification-panel');
+  if (panel.style.display === 'block') {
+    panel.style.display = 'none';
+  } else {
+    panel.style.display = 'block';
+    updateNotificationPanel();
+  }
+}
+
+function closeNotificationPanel() {
+  const panel = document.getElementById('notification-panel');
+  panel.style.display = 'none';
+}
+
+function updateNotificationPanel() {
+  const badge = document.getElementById('notification-badge');
+  const list = document.getElementById('notification-list');
+  
+  // Update badge
+  if (activeReminders.length > 0) {
+    badge.textContent = activeReminders.length;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+  
+  // Update notification list
+  if (activeReminders.length === 0) {
+    list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No pending reminders</div>';
+  } else {
+    list.innerHTML = activeReminders.map(reminder => {
+      const timeStr = new Date(reminder.time).toLocaleString();
+      const statusClass = reminder.isOverdue ? 'overdue' : 'upcoming';
+      const statusText = reminder.isOverdue ? 'OVERDUE' : 'UPCOMING';
+      
+      return `
+        <div class="notification-item ${statusClass}" onclick="openLeadFromNotification('${reminder.lead._id}')">
+          <div class="notification-header">
+            <span class="notification-status">${statusText}</span>
+            <span class="notification-time">${timeStr}</span>
+          </div>
+          <div class="notification-body">
+            <strong>${reminder.lead.name}</strong><br>
+            <small>${reminder.lead.contact} • ${reminder.lead.email}</small>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+function openLeadFromNotification(leadId) {
+  // Close notification panel
+  document.getElementById('notification-panel').style.display = 'none';
+  
+  // Fetch and open the lead
+  const token = getToken();
+  fetch(`${API_URL}/leads/${leadId}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Failed to fetch lead');
+    }
+    return response.json();
+  })
+  .then(lead => {
+    openLeadModal(lead);
+  })
+  .catch(error => {
+    console.error('Error loading lead:', error);
+    showMessage('Error loading lead details', 'error');
+  });
+}
+
+// Close notification panel when clicking outside
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('notification-panel');
+  const bell = document.getElementById('notification-bell');
+  
+  if (panel && bell && !panel.contains(e.target) && !bell.contains(e.target) && !e.target.closest('[onclick*="toggleNotificationPanel"]')) {
+    panel.style.display = 'none';
+  }
+});
+
+// Start reminder system when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  startReminderSystem();
+});
+
+// Stop reminder system when page unloads
+window.addEventListener('beforeunload', () => {
+  if (reminderCheckInterval) {
+    clearInterval(reminderCheckInterval);
+  }
+});
+

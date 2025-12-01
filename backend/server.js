@@ -25,6 +25,12 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
+
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
@@ -33,6 +39,13 @@ app.use('/api/leads', require('./routes/leads'));
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// Serve frontend HTML files for any non-API routes
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
+  }
 });
 
 // Error handling middleware

@@ -64,6 +64,9 @@ const leadSchema = new mongoose.Schema({
   lastContactDate: {
     type: Date
   },
+  nextCallDateTime: {
+    type: Date
+  },
   createdAt: {
     type: Date,
     default: Date.now

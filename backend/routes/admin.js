@@ -2,23 +2,28 @@ const express = require('express');
 const multer = require('multer');
 const xlsx = require('xlsx');
 const bcrypt = require('bcryptjs');
+const archiver = require('archiver');
 const Lead = require('../models/Lead');
 const User = require('../models/User');
+const Brochure = require('../models/Brochure');
 const { auth, adminAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Configure multer for file upload
+const path = require('path');
+const fs = require('fs');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, path.join(__dirname, '..', '..', 'uploads'));
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname);
   }
 });
 
-const upload = multer({ 
+// Multer for Excel (leads) and PDF (brochure)
+const excelUpload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
@@ -30,8 +35,186 @@ const upload = multer({
   }
 });
 
+const pdfUpload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  }
+});
+
+// Upload brochure PDF for university & course
+router.post('/upload-brochure', auth, adminAuth, pdfUpload.single('file'), async (req, res) => {
+  try {
+    const { university, course } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+    if (!university || !course) {
+      return res.status(400).json({ message: 'University and course required' });
+    }
+    // Check for existing brochure
+    const existing = await Brochure.findOne({ university, course });
+    if (existing) {
+      return res.status(400).json({ message: 'Brochure already exists for this university and course' });
+    }
+    
+    // Rename file with university and course name
+    const sanitizedUniv = university.replace(/[^a-z0-9]/gi, '_');
+    const sanitizedCourse = course.replace(/[^a-z0-9]/gi, '_');
+    const newFileName = `${sanitizedUniv}-${sanitizedCourse}-brochure.pdf`;
+    const oldPath = req.file.path;
+    const newPath = path.join(path.dirname(oldPath), newFileName);
+    fs.renameSync(oldPath, newPath);
+    
+    // Store relative path from uploads directory
+    const relativePath = `uploads/${newFileName}`;
+    
+    const brochure = new Brochure({
+      university,
+      course,
+      filePath: relativePath,
+      uploadedBy: req.userId
+    });
+    await brochure.save();
+    res.json({ message: 'Brochure uploaded successfully', brochure });
+  } catch (error) {
+    res.status(500).json({ message: 'Error uploading brochure', error: error.message });
+  }
+});
+
+// Download all brochures as a zip file
+router.get('/brochures/download-all', auth, async (req, res) => {
+  try {
+    const brochures = await Brochure.find({});
+    
+    if (!brochures || brochures.length === 0) {
+      return res.status(404).json({ message: 'No brochures available to download' });
+    }
+
+    // Set response headers for zip download
+    res.attachment('brochures.zip');
+    res.setHeader('Content-Type', 'application/zip');
+
+    // Create archiver instance
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Maximum compression
+    });
+
+    // Handle archiver errors
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      res.status(500).json({ message: 'Error creating zip file', error: err.message });
+    });
+
+    // Pipe archive data to response
+    archive.pipe(res);
+
+    // Group brochures by university
+    const grouped = {};
+    brochures.forEach(b => {
+      if (!grouped[b.university]) {
+        grouped[b.university] = [];
+      }
+      grouped[b.university].push(b);
+    });
+
+    // Add files to zip with folder structure: brochures/[university]/[filename]
+    for (const university of Object.keys(grouped)) {
+      const sanitizedUniv = university.replace(/[^a-z0-9]/gi, '_');
+      
+      for (const brochure of grouped[university]) {
+        const filePath = path.join(__dirname, '..', '..', brochure.filePath);
+        
+        if (fs.existsSync(filePath)) {
+          const fileName = path.basename(brochure.filePath);
+          const archivePath = `brochures/${sanitizedUniv}/${fileName}`;
+          archive.file(filePath, { name: archivePath });
+        } else {
+          console.warn(`File not found: ${filePath}`);
+        }
+      }
+    }
+
+    // Finalize the archive
+    await archive.finalize();
+  } catch (error) {
+    console.error('Error downloading all brochures:', error);
+    res.status(500).json({ message: 'Error downloading brochures', error: error.message });
+  }
+});
+
+// Get all brochures (optionally filter by university/course)
+router.get('/brochures', auth, async (req, res) => {
+  try {
+    const { university, course } = req.query;
+    const query = {};
+    if (university) query.university = university;
+    if (course) query.course = course;
+    const brochures = await Brochure.find(query).populate('uploadedBy', 'name email');
+    res.json(brochures);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching brochures', error: error.message });
+  }
+});
+
+// Delete brochure
+router.delete('/brochure/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const brochure = await Brochure.findById(req.params.id);
+    if (!brochure) {
+      return res.status(404).json({ message: 'Brochure not found' });
+    }
+    // Delete file from filesystem
+    const filePath = path.join(__dirname, '..', '..', brochure.filePath);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    await Brochure.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Brochure deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting brochure', error: error.message });
+  }
+});
+
+// Update brochure
+router.put('/brochure/:id', auth, adminAuth, pdfUpload.single('file'), async (req, res) => {
+  try {
+    const { university, course } = req.body;
+    const brochure = await Brochure.findById(req.params.id);
+    if (!brochure) {
+      return res.status(404).json({ message: 'Brochure not found' });
+    }
+    
+    // If new file uploaded, delete old and rename new
+    if (req.file) {
+      const oldFilePath = path.join(__dirname, '..', '..', brochure.filePath);
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+      }
+      const sanitizedUniv = (university || brochure.university).replace(/[^a-z0-9]/gi, '_');
+      const sanitizedCourse = (course || brochure.course).replace(/[^a-z0-9]/gi, '_');
+      const newFileName = `${sanitizedUniv}-${sanitizedCourse}-brochure.pdf`;
+      const oldPath = req.file.path;
+      const newPath = path.join(path.dirname(oldPath), newFileName);
+      fs.renameSync(oldPath, newPath);
+      brochure.filePath = `uploads/${newFileName}`;
+    }
+    
+    if (university) brochure.university = university;
+    if (course) brochure.course = course;
+    await brochure.save();
+    res.json({ message: 'Brochure updated successfully', brochure });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating brochure', error: error.message });
+  }
+});
+
 // Upload leads from Excel
-router.post('/upload-leads', auth, adminAuth, upload.single('file'), async (req, res) => {
+router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
