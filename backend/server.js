@@ -45,6 +45,7 @@ app.use(express.static(path.join(__dirname, '..', 'frontend'), {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/leads', require('./routes/leads'));
+app.use('/api/calls', require('./routes/calls'));
 
 // Health check
 app.get('/api/health', (req, res) => {

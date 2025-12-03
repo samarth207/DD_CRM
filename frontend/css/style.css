@@ -1299,3 +1299,26 @@ body {
   overflow: hidden;
 }
 
+/* Modal Brochure Filters */
+#modal-brochure-filter-univ,
+#modal-brochure-filter-course {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+}
+
+/* Limit dropdown height on browsers that support it */
+#modal-brochure-filter-univ option,
+#modal-brochure-filter-course option {
+  padding: 4px 8px;
+}
+
+#modal-brochure-search {
+  transition: border-color 0.2s ease;
+}
+
+#modal-brochure-search:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}

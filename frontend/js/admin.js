@@ -889,6 +889,7 @@ async function showStatusLeadsModal(status) {
         <td>${lead.university || ''}</td>
         <td>${lead.course || ''}</td>
         <td>${lead.profession || ''}</td>
+        <td>${lead.source || 'Other'}</td>
         <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status}</span></td>
         <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
         <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
@@ -1095,6 +1096,7 @@ async function openLeadModal(leadId) {
     document.getElementById('admin-modal-lead-university').textContent = data.university || 'N/A';
     document.getElementById('admin-modal-lead-course').textContent = data.course || 'N/A';
     document.getElementById('admin-modal-lead-profession').textContent = data.profession || 'N/A';
+    document.getElementById('admin-modal-lead-source').textContent = data.source || 'Other';
     document.getElementById('admin-modal-lead-status').textContent = data.status;
 
     // Status history
@@ -2416,6 +2418,7 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
     university: document.getElementById('lead-university').value.trim() || undefined,
     course: document.getElementById('lead-course').value.trim() || undefined,
     profession: document.getElementById('lead-profession').value.trim() || undefined,
+    source: document.getElementById('lead-source').value,
     status: document.getElementById('lead-status').value,
     assignedTo: document.getElementById('lead-assigned-to').value
   };
@@ -2569,7 +2572,8 @@ function renderAllLeads() {
       (lead.city && lead.city.toLowerCase().includes(searchTerm)) ||
       (lead.university && lead.university.toLowerCase().includes(searchTerm)) ||
       (lead.course && lead.course.toLowerCase().includes(searchTerm)) ||
-      (lead.profession && lead.profession.toLowerCase().includes(searchTerm))
+      (lead.profession && lead.profession.toLowerCase().includes(searchTerm)) ||
+      (lead.source && lead.source.toLowerCase().includes(searchTerm))
     );
   }
 
@@ -2747,6 +2751,7 @@ function renderPaginatedLeads() {
       <td>${lead.contact || 'N/A'}</td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.city || 'N/A'}">${lead.city || 'N/A'}</td>
       <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.university || 'N/A'}">${lead.university || 'N/A'}</td>
+      <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.source || 'Other'}">${lead.source || 'Other'}</td>
       <td><span class="status-badge status-${lead.status ? lead.status.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-') : 'unknown'}">${lead.status || 'Unknown'}</span></td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
       <td>${new Date(lead.updatedAt).toLocaleDateString()}</td>

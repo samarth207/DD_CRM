@@ -12,6 +12,7 @@ const FIELD_MAPPINGS = {
   university: ['university', 'univ', 'college', 'institution', 'school'],
   course: ['course', 'program', 'degree', 'program name', 'course name'],
   profession: ['profession', 'profassion', 'occupation', 'job', 'work', 'career', 'current profession'],
+  source: ['source', 'lead source', 'source of lead', 'origin', 'channel', 'marketing source', 'campaign'],
   status: ['status', 'lead status', 'current status', 'stage'],
   notes: ['notes', 'note', 'comments', 'comment', 'remarks', 'remark', 'description']
 };

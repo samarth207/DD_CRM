@@ -812,7 +812,7 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
 // Create single lead manually (admin)
 router.post('/create-lead', auth, adminAuth, async (req, res) => {
   try {
-    const { name, contact, email, city, university, course, profession, status, assignedTo } = req.body;
+    const { name, contact, email, city, university, course, profession, source, status, assignedTo } = req.body;
     
     if (!name || !contact) {
       return res.status(400).json({ message: 'Name and contact are required' });
@@ -856,6 +856,7 @@ router.post('/create-lead', auth, adminAuth, async (req, res) => {
       university: university ? university.trim() : undefined,
       course: course ? course.trim() : undefined,
       profession: profession ? profession.trim() : undefined,
+      source: source || 'Other',
       status: initialStatus,
       assignedTo,
       createdBy: req.userId,

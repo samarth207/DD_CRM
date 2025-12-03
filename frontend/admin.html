@@ -461,19 +461,20 @@
                 <th style="width: 40px;">
                   <input type="checkbox" id="select-all-leads" onchange="toggleSelectAll()" style="cursor: pointer;">
                 </th>
-                <th style="width: 18%;">Name</th>
-                <th style="width: 12%;">Contact</th>
-                <th style="width: 12%;">City</th>
-                <th style="width: 15%;">University</th>
-                <th style="width: 12%;">Status</th>
-                <th style="width: 12%;">Assigned To</th>
-                <th style="width: 10%;">Updated</th>
+                <th style="width: 16%;">Name</th>
+                <th style="width: 11%;">Contact</th>
+                <th style="width: 10%;">City</th>
+                <th style="width: 13%;">University</th>
+                <th style="width: 10%;">Source</th>
+                <th style="width: 11%;">Status</th>
+                <th style="width: 11%;">Assigned To</th>
+                <th style="width: 9%;">Updated</th>
                 <th style="width: 9%;">Actions</th>
               </tr>
             </thead>
             <tbody id="all-leads-tbody">
               <tr>
-                <td colspan="9" style="text-align: center; padding: 40px; color: #9ca3af;">
+                <td colspan="10" style="text-align: center; padding: 40px; color: #9ca3af;">
                   Click "Refresh" to load all leads...
                 </td>
               </tr>
@@ -643,6 +644,7 @@
                   <th>University</th>
                   <th>Course</th>
                   <th>Profession</th>
+                  <th>Source</th>
                   <th>Status</th>
                   <th>Last Updated</th>
                 </tr>
@@ -740,6 +742,7 @@
         <div class="lead-details">
           <p><strong>Course:</strong> <span id="admin-modal-lead-course"></span></p>
           <p><strong>Profession:</strong> <span id="admin-modal-lead-profession"></span></p>
+          <p><strong>Source:</strong> <span id="admin-modal-lead-source"></span></p>
           <p><strong>Current Status:</strong> <span id="admin-modal-lead-status"></span></p>
         </div>
       </div>
@@ -778,6 +781,7 @@
               <th>University</th>
               <th>Course</th>
               <th>Profession</th>
+              <th>Source</th>
               <th>Status</th>
               <th>Assigned To</th>
               <th>Updated</th>
@@ -933,6 +937,21 @@
             <label for="lead-profession">Profession</label>
             <input type="text" id="lead-profession" placeholder="Profession">
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="lead-source">Source</label>
+          <select id="lead-source">
+            <option value="Other">Other</option>
+            <option value="Meta">Meta</option>
+            <option value="Google">Google</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Instagram">Instagram</option>
+            <option value="Facebook">Facebook</option>
+            <option value="Direct">Direct</option>
+            <option value="Referral">Referral</option>
+            <option value="Website">Website</option>
+          </select>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">

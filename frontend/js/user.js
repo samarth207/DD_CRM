@@ -406,6 +406,8 @@ async function loadLeads() {
       allLeads = data.leads || data; // Support both new and old format
       updateStats();
       displayLeads();
+      // Start reminder system after leads are loaded
+      startReminderSystem();
     }
   } catch (error) {
     console.error('Error loading leads:', error);
@@ -510,7 +512,8 @@ function displayLeads() {
       (lead.city && lead.city.toLowerCase().includes(filterSearch)) ||
       (lead.university && lead.university.toLowerCase().includes(filterSearch)) ||
       (lead.course && lead.course.toLowerCase().includes(filterSearch)) ||
-      (lead.profession && lead.profession.toLowerCase().includes(filterSearch));
+      (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
+      (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
     return matchesStatus && matchesSearch;
   });
@@ -560,6 +563,7 @@ function displayLeads() {
         <div><strong>University:</strong> ${lead.university || 'N/A'}</div>
         <div><strong>Course:</strong> ${lead.course || 'N/A'}</div>
         <div><strong>Profession:</strong> ${lead.profession || 'N/A'}</div>
+        <div><strong>Source:</strong> ${lead.source || 'Other'}</div>
       </div>
     `;
     
@@ -616,6 +620,7 @@ async function openLeadModal(lead) {
   document.getElementById('modal-lead-university').textContent = lead.university || 'N/A';
   document.getElementById('modal-lead-course').textContent = lead.course || 'N/A';
   document.getElementById('modal-lead-profession').textContent = lead.profession || 'N/A';
+  document.getElementById('modal-lead-source').textContent = lead.source || 'Other';
   document.getElementById('modal-lead-status').value = lead.status;
 
   // Load all available brochures (not just for this lead's course/university)
@@ -633,23 +638,44 @@ async function openLeadModal(lead) {
     if (Array.isArray(allBrochures) && allBrochures.length > 0) {
       // Build brochure interface with filters
       let brochureHtml = `
-        <div style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
-          <h4 style="margin:0 0 10px 0; color:#1e293b; font-size:14px; display:flex; align-items:center; gap:6px;">
-            <i class="fas fa-book-open" style="color:#6366f1;"></i>
-            Available Brochures for Download
-          </h4>
-          
-          <div style="margin-bottom:12px; display:flex; gap:8px;">
-            <select id="modal-brochure-filter-univ" onchange="filterModalBrochures()" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
-              <option value="">All Universities</option>
-            </select>
-            <select id="modal-brochure-filter-course" onchange="filterModalBrochures()" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
-              <option value="">All Courses</option>
-            </select>
+        <div style="background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; overflow:hidden;">
+          <div 
+            onclick="toggleBrochureSection()" 
+            style="padding:12px 14px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; background:linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); transition:all 0.2s ease; user-select:none;"
+            onmouseover="this.style.background='linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)'"
+            onmouseout="this.style.background='linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)'">
+            <h4 style="margin:0; color:#1e293b; font-size:14px; display:flex; align-items:center; gap:8px; font-weight:600;">
+              <i class="fas fa-book-open" style="color:#6366f1;"></i>
+              Available Brochures for Download
+              <span style="background:#6366f1; color:white; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:600;">${allBrochures.length}</span>
+            </h4>
+            <i id="brochure-toggle-icon" class="fas fa-chevron-down" style="color:#6366f1; font-size:14px; transition:transform 0.3s ease;"></i>
           </div>
           
-          <div id="modal-brochure-list" style="max-height:300px; overflow-y:auto; background:white; border:1px solid #e2e8f0; border-radius:6px; padding:8px;">
-            <!-- Brochures will be populated here -->
+          <div id="brochure-collapse-content" style="max-height:0; overflow:hidden; transition:max-height 0.4s ease, padding 0.4s ease; padding:0 12px;">
+            <div style="padding-bottom:12px;">
+              <div style="margin-bottom:8px; margin-top:12px;">
+                <input 
+                  type="text" 
+                  id="modal-brochure-search" 
+                  placeholder="🔍 Search university or course..." 
+                  oninput="filterModalBrochures()"
+                  style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
+              </div>
+              
+              <div style="margin-bottom:12px; display:flex; gap:8px;">
+                <select id="modal-brochure-filter-univ" onchange="filterModalBrochures()" size="1" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white; cursor:pointer;">
+                  <option value="">All Universities</option>
+                </select>
+                <select id="modal-brochure-filter-course" onchange="filterModalBrochures()" size="1" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white; cursor:pointer;">
+                  <option value="">All Courses</option>
+                </select>
+              </div>
+              
+              <div id="modal-brochure-list" style="max-height:300px; overflow-y:auto; background:white; border:1px solid #e2e8f0; border-radius:6px; padding:8px;">
+                <!-- Brochures will be populated here -->
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -1207,7 +1233,40 @@ let shownReminders = new Set(); // Track shown reminders to avoid duplicates
 let snoozedReminders = new Map(); // Track snoozed reminders
 let activeReminders = []; // Store all active reminders for notification panel
 
+// Load shown reminders from localStorage on page load
+function loadShownReminders() {
+  try {
+    const stored = localStorage.getItem('shownReminders');
+    if (stored) {
+      const data = JSON.parse(stored);
+      // Only keep reminders from last 24 hours
+      const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+      shownReminders = new Set(
+        data.filter(item => {
+          const timestamp = parseInt(item.split('|')[1]);
+          return timestamp > oneDayAgo;
+        })
+      );
+    }
+  } catch (error) {
+    console.error('Error loading shown reminders:', error);
+    shownReminders = new Set();
+  }
+}
+
+// Save shown reminders to localStorage
+function saveShownReminders() {
+  try {
+    localStorage.setItem('shownReminders', JSON.stringify(Array.from(shownReminders)));
+  } catch (error) {
+    console.error('Error saving shown reminders:', error);
+  }
+}
+
 function startReminderSystem() {
+  // Load previously shown reminders
+  loadShownReminders();
+  
   // Check every 30 seconds
   if (reminderCheckInterval) {
     clearInterval(reminderCheckInterval);
@@ -1232,13 +1291,17 @@ function checkReminders() {
     
     const followUpTime = new Date(lead.nextCallDateTime);
     const timeDiff = followUpTime - now;
-    const leadKey = lead._id + '-' + lead.nextCallDateTime;
+    const leadKey = lead._id + '-' + lead.nextCallDateTime + '|' + Date.now();
+    const baseKey = lead._id + '-' + lead.nextCallDateTime;
     
     // Check if snoozed
     const snoozeTime = snoozedReminders.get(lead._id);
     if (snoozeTime && now < snoozeTime) {
       return; // Still snoozed
     }
+    
+    // Check if already shown (look for any key starting with baseKey)
+    const alreadyShown = Array.from(shownReminders).some(key => key.startsWith(baseKey));
     
     // Add to active reminders if within 5 minutes of follow-up time
     if (timeDiff > 0 && timeDiff <= 300000) {
@@ -1249,9 +1312,10 @@ function checkReminders() {
       });
       
       // Show popup for first-time reminder
-      if (!shownReminders.has(leadKey)) {
+      if (!alreadyShown) {
         showReminderPopup(lead);
         shownReminders.add(leadKey);
+        saveShownReminders();
       }
     }
     
@@ -1264,9 +1328,10 @@ function checkReminders() {
       });
       
       // Show popup for first-time overdue reminder
-      if (!shownReminders.has(leadKey)) {
+      if (!alreadyShown) {
         showReminderPopup(lead, true);
         shownReminders.add(leadKey);
+        saveShownReminders();
       }
     }
   });
@@ -1314,11 +1379,14 @@ function closeReminderPopup() {
 function openLeadFromReminder() {
   if (!currentReminderLead) return;
   
+  // Save lead reference before closing popup (which clears currentReminderLead)
+  const leadId = currentReminderLead._id;
+  
   closeReminderPopup();
   
   // Fetch fresh lead data to ensure we have the latest
   const token = getToken();
-  fetch(`${API_URL}/leads/${currentReminderLead._id}`, {
+  fetch(`${API_URL}/leads/${leadId}`, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -1334,7 +1402,7 @@ function openLeadFromReminder() {
   })
   .catch(error => {
     console.error('Error loading lead:', error);
-    showMessage('Error loading lead details', 'error');
+    showToast('Error', 'Failed to load lead details', 'error');
   });
 }
 
@@ -1346,11 +1414,17 @@ function snoozeReminder() {
   snoozedReminders.set(currentReminderLead._id, snoozeUntil);
   
   // Remove from shown reminders so it can appear again after snooze
-  const leadKey = currentReminderLead._id + '-' + currentReminderLead.nextCallDateTime;
-  shownReminders.delete(leadKey);
+  const baseKey = currentReminderLead._id + '-' + currentReminderLead.nextCallDateTime;
+  // Remove all keys that start with baseKey
+  Array.from(shownReminders).forEach(key => {
+    if (key.startsWith(baseKey)) {
+      shownReminders.delete(key);
+    }
+  });
+  saveShownReminders();
   
   closeReminderPopup();
-  showMessage('Reminder snoozed for 15 minutes', 'success');
+  showToast('Snoozed', 'Reminder snoozed for 15 minutes', 'info');
 }
 
 // Notification Panel Functions
@@ -1376,7 +1450,7 @@ function updateNotificationPanel() {
   // Update badge
   if (activeReminders.length > 0) {
     badge.textContent = activeReminders.length;
-    badge.style.display = 'inline-block';
+    badge.style.display = 'flex';
   } else {
     badge.style.display = 'none';
   }
@@ -1442,10 +1516,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Start reminder system when page loads
-document.addEventListener('DOMContentLoaded', () => {
-  startReminderSystem();
-});
+// Reminder system now starts automatically after leads are loaded in loadLeads()
 
 // Stop reminder system when page unloads
 window.addEventListener('beforeunload', () => {
@@ -1473,18 +1544,37 @@ function displayModalBrochures(brochures) {
   
   listDiv.innerHTML = '';
   
-  Object.keys(grouped).sort().forEach(univ => {
+  Object.keys(grouped).sort().forEach((univ, univIndex) => {
     const univSection = document.createElement('div');
-    univSection.style.cssText = 'margin-bottom:10px;';
+    univSection.style.cssText = 'margin-bottom:8px; border:1px solid #e5e7eb; border-radius:6px; overflow:hidden;';
     
     const univHeader = document.createElement('div');
-    univHeader.style.cssText = 'font-weight:600; color:#1e293b; font-size:13px; padding:6px 8px; background:#f1f5f9; border-radius:4px; margin-bottom:4px; display:flex; align-items:center; gap:6px;';
-    univHeader.innerHTML = `<i class="fas fa-university" style="color:#6366f1; font-size:11px;"></i>${univ}`;
+    univHeader.style.cssText = 'font-weight:600; color:#1e293b; font-size:13px; padding:10px 12px; background:linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; transition:all 0.2s ease;';
+    univHeader.onclick = () => toggleUniversitySection(univIndex);
+    univHeader.onmouseenter = (e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)'; };
+    univHeader.onmouseleave = (e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)'; };
+    
+    const courseCount = grouped[univ].length;
+    univHeader.innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px;">
+        <i class="fas fa-university" style="color:#6366f1; font-size:11px;"></i>
+        ${univ}
+        <span style="background:#6366f1; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">${courseCount}</span>
+      </div>
+      <i id="univ-toggle-${univIndex}" class="fas fa-chevron-down" style="color:#6366f1; font-size:12px; transition:transform 0.3s ease;"></i>
+    `;
     univSection.appendChild(univHeader);
+    
+    const coursesContainer = document.createElement('div');
+    coursesContainer.id = `univ-courses-${univIndex}`;
+    coursesContainer.style.cssText = 'max-height:0; overflow:hidden; transition:max-height 0.4s ease, padding 0.4s ease; background:#ffffff;';
+    
+    const coursesInner = document.createElement('div');
+    coursesInner.style.cssText = 'padding:8px;';
     
     grouped[univ].forEach(brochure => {
       const item = document.createElement('div');
-      item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:4px; background:#fafafa; transition:all 0.2s;';
+      item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:6px; background:#fafafa; transition:all 0.2s;';
       item.onmouseenter = (e) => { e.currentTarget.style.background = '#f0f9ff'; e.currentTarget.style.borderColor = '#bfdbfe'; };
       item.onmouseleave = (e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#e2e8f0'; };
       
@@ -1499,21 +1589,53 @@ function displayModalBrochures(brochures) {
         </div>
       `;
       
-      univSection.appendChild(item);
+      coursesInner.appendChild(item);
     });
     
+    coursesContainer.appendChild(coursesInner);
+    univSection.appendChild(coursesContainer);
     listDiv.appendChild(univSection);
   });
+}
+
+// Toggle university section in brochures
+function toggleUniversitySection(univIndex) {
+  const content = document.getElementById(`univ-courses-${univIndex}`);
+  const icon = document.getElementById(`univ-toggle-${univIndex}`);
+  
+  if (!content || !icon) return;
+  
+  const isCollapsed = content.style.maxHeight === '0px' || content.style.maxHeight === '';
+  
+  if (isCollapsed) {
+    // Expand - calculate actual content height
+    content.style.maxHeight = content.scrollHeight + 'px';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    // Collapse
+    content.style.maxHeight = '0';
+    icon.style.transform = 'rotate(0deg)';
+  }
 }
 
 // Function to filter brochures in modal
 function filterModalBrochures() {
   if (!window.modalBrochures) return;
   
+  const searchInput = document.getElementById('modal-brochure-search');
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
   const univFilter = document.getElementById('modal-brochure-filter-univ').value;
   const courseFilter = document.getElementById('modal-brochure-filter-course').value;
   
   let filtered = window.modalBrochures;
+  
+  // Apply search filter first
+  if (searchTerm) {
+    filtered = filtered.filter(b => 
+      (b.university || '').toLowerCase().includes(searchTerm) || 
+      (b.course || '').toLowerCase().includes(searchTerm)
+    );
+  }
   
   if (univFilter) {
     filtered = filtered.filter(b => b.university === univFilter);
@@ -1524,4 +1646,28 @@ function filterModalBrochures() {
   }
   
   displayModalBrochures(filtered);
+}
+
+// Toggle brochure section collapse
+function toggleBrochureSection() {
+  const content = document.getElementById('brochure-collapse-content');
+  const icon = document.getElementById('brochure-toggle-icon');
+  
+  if (!content || !icon) return;
+  
+  const isCollapsed = content.style.maxHeight === '0px' || content.style.maxHeight === '';
+  
+  if (isCollapsed) {
+    // Expand
+    content.style.maxHeight = '450px';
+    content.style.paddingTop = '0';
+    content.style.paddingBottom = '0';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    // Collapse
+    content.style.maxHeight = '0';
+    content.style.paddingTop = '0';
+    content.style.paddingBottom = '0';
+    icon.style.transform = 'rotate(0deg)';
+  }
 }

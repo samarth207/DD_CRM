@@ -11,6 +11,11 @@ const leadSchema = new mongoose.Schema({
   university: { type: String },
   course: { type: String },
   profession: { type: String },
+  source: {
+    type: String,
+    enum: ['Meta', 'Google', 'LinkedIn', 'Instagram', 'Facebook', 'Direct', 'Referral', 'Website', 'Other'],
+    default: 'Other'
+  },
   status: {
     type: String,
     enum: [
