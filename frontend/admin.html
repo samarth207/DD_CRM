@@ -23,6 +23,10 @@
         <i class="fas fa-chart-line"></i>
         <span>Dashboard</span>
       </a>
+      <a href="#" class="sidebar-nav-item" data-section="all-leads">
+        <i class="fas fa-database"></i>
+        <span>All Leads</span>
+      </a>
       <a href="#" class="sidebar-nav-item" data-section="performance">
         <i class="fas fa-bolt"></i>
         <span>Performance</span>
@@ -170,6 +174,350 @@
             </div>
           </div>
           <p style="margin-top:14px; font-size:12px; color:#6b7280;">Metrics are automatically loaded when you open the dashboard.</p>
+        </div>
+      </div>
+
+      <!-- All Leads Section -->
+      <div class="card" id="all-leads-card">
+        <h2 style="display:flex; justify-content:space-between; align-items:center;">
+          <span><i class="fas fa-database" style="margin-right: 8px; color: #6366f1;"></i>All Leads Management</span>
+          <button onclick="openCreateLeadModal()" class="btn btn-primary" style="font-size: 13px;">
+            <i class="fas fa-plus"></i> Add Lead
+          </button>
+        </h2>
+        
+        <!-- Filter and Search Controls -->
+        <div style="margin: 18px 0; display: flex; gap: 12px; flex-wrap: wrap;">
+          <input type="text" id="all-leads-search" placeholder="Search by name, email, contact, city..." style="flex: 1; min-width: 250px; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
+          
+          <select id="all-leads-status-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+            <option value="">All Statuses</option>
+            <option value="Fresh">Fresh</option>
+            <option value="Buffer fresh">Buffer fresh</option>
+            <option value="Did not pick">Did not pick</option>
+            <option value="Request call back">Request call back</option>
+            <option value="Follow up">Follow up</option>
+            <option value="Counselled">Counselled</option>
+            <option value="Interested in next batch">Interested in next batch</option>
+            <option value="Registration fees paid">Registration fees paid</option>
+            <option value="Enrolled">Enrolled</option>
+            <option value="Junk/not interested">Junk/not interested</option>
+          </select>
+          
+          <select id="all-leads-user-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+            <option value="">All Users</option>
+          </select>
+          
+          <button onclick="toggleTransitionFilter()" class="btn btn-secondary" style="font-size: 13px;">
+            <i class="fas fa-exchange-alt"></i> Status Transition
+          </button>
+          
+          <button onclick="toggleNoActionFilter()" class="btn btn-secondary" style="font-size: 13px;">
+            <i class="fas fa-user-clock"></i> No Action Taken
+          </button>
+          
+          <button onclick="toggleTransferFilter()" class="btn btn-secondary" style="font-size: 13px;">
+            <i class="fas fa-user-friends"></i> Lead Transfer
+          </button>
+          
+          <button onclick="loadAllLeads()" class="btn btn-secondary" style="font-size: 13px;">
+            <i class="fas fa-sync"></i> Refresh
+          </button>
+        </div>
+
+        <!-- No Action Filter Panel -->
+        <div id="no-action-filter-panel" style="display: none; margin-bottom: 16px; padding: 16px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0; color: #92400e; font-size: 14px; font-weight: 600;">
+              <i class="fas fa-exclamation-triangle"></i> Filter Leads with No Action Taken
+            </h4>
+            <button onclick="clearNoActionFilter()" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
+              <i class="fas fa-times"></i> Clear
+            </button>
+          </div>
+          
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 13px; color: #78350f; font-weight: 500;">Show leads with no activity for:</label>
+              <select id="no-action-period" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; min-width: 150px;">
+                <option value="1">Last 24 Hours</option>
+                <option value="3">Last 3 Days</option>
+                <option value="7">Last 7 Days</option>
+                <option value="15">Last 15 Days</option>
+                <option value="30">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            
+            <div id="no-action-custom-dates" style="display: none; gap: 8px; align-items: center;">
+              <input type="date" id="no-action-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <span style="color: #6b7280;">to</span>
+              <input type="date" id="no-action-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+            </div>
+            
+            <button onclick="applyNoActionFilter()" class="btn btn-primary" style="font-size: 13px; padding: 6px 14px;">
+              <i class="fas fa-check"></i> Apply Filter
+            </button>
+          </div>
+          
+          <div id="no-action-filter-status" style="margin-top: 10px; font-size: 12px; color: #78350f;">
+            <i class="fas fa-info-circle"></i> This will show leads assigned but not updated (no status changes or notes added) during the selected period.
+          </div>
+        </div>
+
+        <!-- Lead Transfer Filter Panel -->
+        <div id="transfer-filter-panel" style="display: none; margin-bottom: 16px; padding: 16px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0; color: #1e40af; font-size: 14px; font-weight: 600;">
+              <i class="fas fa-user-friends"></i> Filter by Lead Transfer
+            </h4>
+            <button onclick="clearTransferFilter()" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
+              <i class="fas fa-times"></i> Clear
+            </button>
+          </div>
+          
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 13px; color: #1e3a8a; font-weight: 500;">From User:</label>
+              <select id="transfer-from-user" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; min-width: 150px;">
+                <option value="">Any User</option>
+              </select>
+            </div>
+            
+            <i class="fas fa-arrow-right" style="color: #1e40af;"></i>
+            
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 13px; color: #1e3a8a; font-weight: 500;">To User:</label>
+              <select id="transfer-to-user" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; min-width: 150px;">
+                <option value="">Any User</option>
+              </select>
+            </div>
+            
+            <div style="border-left: 2px solid #93c5fd; padding-left: 12px; margin-left: 8px; display: flex; gap: 8px; align-items: center;">
+              <label style="font-size: 13px; color: #1e3a8a; font-weight: 500;">Time Period:</label>
+              <select id="transfer-date-filter" onchange="handleTransferDateFilter()" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white;">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="15days">Last 15 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            
+            <div id="transfer-custom-dates" style="display: none; gap: 8px; align-items: center;">
+              <input type="date" id="transfer-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <span style="color: #6b7280;">to</span>
+              <input type="date" id="transfer-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+            </div>
+            
+            <button onclick="applyTransferFilter()" class="btn btn-primary" style="font-size: 13px; padding: 6px 14px;">
+              <i class="fas fa-check"></i> Apply Filter
+            </button>
+          </div>
+          
+          <div id="transfer-filter-status" style="margin-top: 10px; font-size: 12px; color: #1e3a8a;">
+            <i class="fas fa-info-circle"></i> Select transfer criteria and time period, then click Apply.
+          </div>
+        </div>
+
+        <!-- Status Transition Filter Panel -->
+        <div id="transition-filter-panel" style="display: none; margin-bottom: 16px; padding: 16px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0; color: #047857; font-size: 14px; font-weight: 600;">
+              <i class="fas fa-filter"></i> Filter by Status Transition
+            </h4>
+            <button onclick="clearTransitionFilter()" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
+              <i class="fas fa-times"></i> Clear
+            </button>
+          </div>
+          
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 13px; color: #065f46; font-weight: 500;">From:</label>
+              <select id="transition-from-status" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; min-width: 150px;">
+                <option value="">Any Status</option>
+                <option value="Fresh">Fresh</option>
+                <option value="Buffer fresh">Buffer fresh</option>
+                <option value="Did not pick">Did not pick</option>
+                <option value="Request call back">Request call back</option>
+                <option value="Follow up">Follow up</option>
+                <option value="Counselled">Counselled</option>
+                <option value="Interested in next batch">Interested in next batch</option>
+                <option value="Registration fees paid">Registration fees paid</option>
+                <option value="Enrolled">Enrolled</option>
+                <option value="Junk/not interested">Junk/not interested</option>
+              </select>
+            </div>
+            
+            <i class="fas fa-arrow-right" style="color: #047857;"></i>
+            
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 13px; color: #065f46; font-weight: 500;">To:</label>
+              <select id="transition-to-status" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; min-width: 150px;">
+                <option value="">Any Status</option>
+                <option value="Fresh">Fresh</option>
+                <option value="Buffer fresh">Buffer fresh</option>
+                <option value="Did not pick">Did not pick</option>
+                <option value="Request call back">Request call back</option>
+                <option value="Follow up">Follow up</option>
+                <option value="Counselled">Counselled</option>
+                <option value="Interested in next batch">Interested in next batch</option>
+                <option value="Registration fees paid">Registration fees paid</option>
+                <option value="Enrolled">Enrolled</option>
+                <option value="Junk/not interested">Junk/not interested</option>
+              </select>
+            </div>
+            
+            <div style="border-left: 2px solid #86efac; padding-left: 12px; margin-left: 8px; display: flex; gap: 8px; align-items: center;">
+              <label style="font-size: 13px; color: #065f46; font-weight: 500;">Time Period:</label>
+              <select id="transition-date-filter" onchange="handleTransitionDateFilter()" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white;">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="15days">Last 15 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            
+            <div id="transition-custom-dates" style="display: none; gap: 8px; align-items: center;">
+              <input type="date" id="transition-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+              <span style="color: #6b7280;">to</span>
+              <input type="date" id="transition-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
+            </div>
+            
+            <button onclick="applyTransitionFilter()" class="btn btn-primary" style="font-size: 13px; padding: 6px 14px;">
+              <i class="fas fa-check"></i> Apply Filter
+            </button>
+          </div>
+          
+          <div id="transition-filter-status" style="margin-top: 10px; font-size: 12px; color: #065f46;">
+            <i class="fas fa-info-circle"></i> Select status transition and time period, then click Apply.
+          </div>
+          
+          <!-- Quick Preset Buttons -->
+          <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #86efac;">
+            <div style="font-size: 12px; color: #065f46; font-weight: 600; margin-bottom: 8px;">
+              <i class="fas fa-magic"></i> Quick Presets:
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button onclick="applyQuickTransition('Fresh', 'Follow up')" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">
+                Fresh → Follow up
+              </button>
+              <button onclick="applyQuickTransition('Fresh', 'Buffer fresh')" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">
+                Fresh → Buffer fresh
+              </button>
+              <button onclick="applyQuickTransition('Did not pick', 'Junk/not interested')" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">
+                Did not pick → Junk
+              </button>
+              <button onclick="applyQuickTransition('Follow up', 'Counselled')" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">
+                Follow up → Counselled
+              </button>
+              <button onclick="applyQuickTransition('Counselled', 'Enrolled')" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">
+                Counselled → Enrolled
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bulk Actions -->
+        <div id="bulk-actions-bar" style="display: none; margin-bottom: 16px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-weight: 600; color: #0369a1;">
+              <span id="selected-count">0</span> lead(s) selected
+            </span>
+            
+            <select id="bulk-status-select" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white;">
+              <option value="">Change Status...</option>
+              <option value="Fresh">Fresh</option>
+              <option value="Buffer fresh">Buffer fresh</option>
+              <option value="Did not pick">Did not pick</option>
+              <option value="Request call back">Request call back</option>
+              <option value="Follow up">Follow up</option>
+              <option value="Counselled">Counselled</option>
+              <option value="Interested in next batch">Interested in next batch</option>
+              <option value="Registration fees paid">Registration fees paid</option>
+              <option value="Enrolled">Enrolled</option>
+              <option value="Junk/not interested">Junk/not interested</option>
+            </select>
+            
+            <button onclick="bulkUpdateStatus()" class="btn btn-primary" style="font-size: 12px; padding: 6px 12px;">
+              <i class="fas fa-edit"></i> Update Status
+            </button>
+            
+            <button onclick="bulkDeleteLeads()" class="btn btn-danger" style="font-size: 12px; padding: 6px 12px; background: #dc2626;">
+              <i class="fas fa-trash"></i> Delete Selected
+            </button>
+            
+            <button onclick="clearSelection()" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">
+              Clear Selection
+            </button>
+          </div>
+        </div>
+
+        <!-- Leads Table -->
+        <div style="margin-top: 18px;">
+          <table class="data-table" id="all-leads-table" style="table-layout: auto; width: 100%;">
+            <thead>
+              <tr>
+                <th style="width: 40px;">
+                  <input type="checkbox" id="select-all-leads" onchange="toggleSelectAll()" style="cursor: pointer;">
+                </th>
+                <th style="width: 18%;">Name</th>
+                <th style="width: 12%;">Contact</th>
+                <th style="width: 12%;">City</th>
+                <th style="width: 15%;">University</th>
+                <th style="width: 12%;">Status</th>
+                <th style="width: 12%;">Assigned To</th>
+                <th style="width: 10%;">Updated</th>
+                <th style="width: 9%;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="all-leads-tbody">
+              <tr>
+                <td colspan="9" style="text-align: center; padding: 40px; color: #9ca3af;">
+                  Click "Refresh" to load all leads...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #6b7280;">
+            Total Leads: <strong id="all-leads-total">0</strong> | 
+            Showing: <strong id="all-leads-showing">0</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 13px; color: #6b7280;">Per page:</span>
+            <select id="leads-per-page" onchange="changeLeadsPerPage()" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+              <option value="10">10</option>
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div id="pagination-controls" style="display: flex; gap: 6px; align-items: center;">
+            <button onclick="goToFirstPage()" class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;" id="first-page-btn">
+              <i class="fas fa-angle-double-left"></i>
+            </button>
+            <button onclick="goToPrevPage()" class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;" id="prev-page-btn">
+              <i class="fas fa-angle-left"></i>
+            </button>
+            <span style="padding: 6px 12px; font-size: 13px; color: #6b7280;">
+              Page <strong id="current-page">1</strong> of <strong id="total-pages">1</strong>
+            </span>
+            <button onclick="goToNextPage()" class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;" id="next-page-btn">
+              <i class="fas fa-angle-right"></i>
+            </button>
+            <button onclick="goToLastPage()" class="btn btn-secondary" style="padding: 6px 10px; font-size: 12px;" id="last-page-btn">
+              <i class="fas fa-angle-double-right"></i>
+            </button>
+          </div>
         </div>
       </div>
       
@@ -384,17 +732,21 @@
     </div>
   </div>  <!-- Lead Detail Modal -->
   <div id="admin-lead-modal" class="modal" style="display:none;">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 800px;">
       <span class="close" onclick="closeAdminLeadModal()">&times;</span>
-      <h2 id="admin-modal-lead-name"></h2>
-      <div class="lead-details">
-        <p><strong>Contact:</strong> <span id="admin-modal-lead-contact"></span></p>
-        <p><strong>Email:</strong> <span id="admin-modal-lead-email"></span></p>
-        <p><strong>City:</strong> <span id="admin-modal-lead-city"></span></p>
-        <p><strong>University:</strong> <span id="admin-modal-lead-university"></span></p>
-        <p><strong>Course:</strong> <span id="admin-modal-lead-course"></span></p>
-        <p><strong>Profession:</strong> <span id="admin-modal-lead-profession"></span></p>
-        <p><strong>Current Status:</strong> <span id="admin-modal-lead-status"></span></p>
+      <h2 id="admin-modal-lead-name" style="margin-bottom: 20px;"></h2>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+        <div class="lead-details">
+          <p><strong>Contact:</strong> <span id="admin-modal-lead-contact"></span></p>
+          <p><strong>Email:</strong> <span id="admin-modal-lead-email"></span></p>
+          <p><strong>City:</strong> <span id="admin-modal-lead-city"></span></p>
+          <p><strong>University:</strong> <span id="admin-modal-lead-university"></span></p>
+        </div>
+        <div class="lead-details">
+          <p><strong>Course:</strong> <span id="admin-modal-lead-course"></span></p>
+          <p><strong>Profession:</strong> <span id="admin-modal-lead-profession"></span></p>
+          <p><strong>Current Status:</strong> <span id="admin-modal-lead-status"></span></p>
+        </div>
       </div>
       <h3>Status History</h3>
       <div id="admin-status-history" class="notes-list"></div>
@@ -548,6 +900,94 @@
       </form>
       
       <div id="create-user-message" class="message" style="display: none; margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- Create Lead Modal -->
+  <div id="create-lead-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center; overflow-y: auto;">
+    <div style="background:white; border-radius:8px; padding:24px; width:90%; max-width:600px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1); margin: 20px auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="margin:0; font-size:20px; color:#111827;"><i class="fas fa-plus" style="margin-right:8px; color:#6366f1;"></i>Add New Lead</h2>
+        <button onclick="closeCreateLeadModal()" style="background:none; border:none; font-size:24px; color:#9ca3af; cursor:pointer; padding:0; width:32px; height:32px;">&times;</button>
+      </div>
+      <form id="create-lead-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label for="lead-name">Name <span style="color: #dc2626;">*</span></label>
+            <input type="text" id="lead-name" required placeholder="Full name">
+          </div>
+          
+          <div class="form-group">
+            <label for="lead-contact">Contact <span style="color: #dc2626;">*</span></label>
+            <input type="text" id="lead-contact" required placeholder="Phone number">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="lead-email">Email</label>
+          <input type="email" id="lead-email" placeholder="email@example.com">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label for="lead-city">City</label>
+            <input type="text" id="lead-city" placeholder="City">
+          </div>
+          
+          <div class="form-group">
+            <label for="lead-profession">Profession</label>
+            <input type="text" id="lead-profession" placeholder="Profession">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label for="lead-university">University</label>
+            <input type="text" id="lead-university" placeholder="University">
+          </div>
+          
+          <div class="form-group">
+            <label for="lead-course">Course</label>
+            <input type="text" id="lead-course" placeholder="Course">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label for="lead-status">Status</label>
+            <select id="lead-status">
+              <option value="Fresh">Fresh</option>
+              <option value="Buffer fresh">Buffer fresh</option>
+              <option value="Did not pick">Did not pick</option>
+              <option value="Request call back">Request call back</option>
+              <option value="Follow up">Follow up</option>
+              <option value="Counselled">Counselled</option>
+              <option value="Interested in next batch">Interested in next batch</option>
+              <option value="Registration fees paid">Registration fees paid</option>
+              <option value="Enrolled">Enrolled</option>
+              <option value="Junk/not interested">Junk/not interested</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="lead-assigned-to">Assign To <span style="color: #dc2626;">*</span></label>
+            <select id="lead-assigned-to" required>
+              <option value="">Select user...</option>
+            </select>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:12px; margin-top:20px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">
+            <i class="fas fa-plus"></i> Create Lead
+          </button>
+          <button type="button" onclick="closeCreateLeadModal()" class="btn btn-secondary" style="flex:1;">
+            Cancel
+          </button>
+        </div>
+      </form>
+      
+      <div id="create-lead-message" class="message" style="display: none; margin-top:16px;"></div>
     </div>
   </div>
   

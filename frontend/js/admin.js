@@ -243,6 +243,10 @@ function showSection(section) {
     case 'dashboard':
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
+    case 'all-leads':
+      targetId = 'all-leads-card';
+      loadAllLeads(); // Load all leads when navigating to section
+      break;
     case 'performance':
       targetId = 'overall-performance-card';
       break;
@@ -534,6 +538,13 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
   formData.append('file', fileInput.files[0]);
   formData.append('userIds', JSON.stringify(selectedUsers));
   
+  // Show loading message for large files
+  const fileSize = fileInput.files[0].size;
+  const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+  if (fileSizeMB > 5) {
+    showMessage(`Uploading ${fileSizeMB}MB file... This may take a moment for large files.`, 'info');
+  }
+  
   try {
     const token = getToken();
     const response = await fetch(`${API_URL}/admin/upload-leads`, {
@@ -564,8 +575,12 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
       showMessage(data.message || 'Upload failed', 'error');
     }
   } catch (error) {
-    showMessage('An error occurred during upload', 'error');
     console.error('Upload error:', error);
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      showMessage('Upload failed. The file may be too large or the server timed out. Try uploading in smaller batches.', 'error');
+    } else {
+      showMessage('An error occurred during upload. Please check the file and try again.', 'error');
+    }
   }
 });
 
@@ -807,7 +822,20 @@ function createOverallStatusChart(statusBreakdown) {
         }
       },
       scales: {
-        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        y: { 
+          beginAtZero: true, 
+          ticks: { 
+            callback: function(value) {
+              // Format y-axis labels for readability
+              if (value >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+              } else if (value >= 1000) {
+                return (value / 1000).toFixed(1) + 'k';
+              }
+              return value;
+            }
+          }
+        }
       },
       onClick: async (evt, elements) => {
         if (!elements || elements.length === 0) return;
@@ -948,7 +976,15 @@ function createUserLeadsChart(userStats) {
         y: {
           beginAtZero: true,
           ticks: {
-            stepSize: 1
+            callback: function(value) {
+              // Format y-axis labels for readability
+              if (value >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+              } else if (value >= 1000) {
+                return (value / 1000).toFixed(1) + 'k';
+              }
+              return value;
+            }
           }
         }
       }
@@ -1016,7 +1052,15 @@ function updateStatusChart(statusBreakdown) {
         y: {
           beginAtZero: true,
           ticks: {
-            stepSize: 1
+            callback: function(value) {
+              // Format y-axis labels for readability
+              if (value >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+              } else if (value >= 1000) {
+                return (value / 1000).toFixed(1) + 'k';
+              }
+              return value;
+            }
           }
         }
       }
@@ -1828,3 +1872,1057 @@ async function applyUserDateFilterCustom(startDate, endDate) {
     console.error('Error applying custom user date filter:', error);
   }
 }
+
+// ===== ALL LEADS MANAGEMENT =====
+let selectedLeadIds = [];
+let currentPage = 1;
+let leadsPerPage = 25;
+let filteredLeadsData = [];
+let transitionFilterActive = false;
+let transitionFilterConfig = {
+  fromStatus: '',
+  toStatus: '',
+  dateFilter: 'all',
+  startDate: null,
+  endDate: null
+};
+let noActionFilterActive = false;
+let noActionFilterConfig = {
+  days: 7,
+  startDate: null,
+  endDate: null
+};
+let transferFilterActive = false;
+let transferFilterConfig = {
+  fromUser: '',
+  toUser: '',
+  dateFilter: 'all',
+  startDate: null,
+  endDate: null
+};
+
+// Toggle transition filter panel
+function toggleTransitionFilter() {
+  const panel = document.getElementById('transition-filter-panel');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Handle transition date filter dropdown change
+function handleTransitionDateFilter() {
+  const dateFilter = document.getElementById('transition-date-filter').value;
+  const customDates = document.getElementById('transition-custom-dates');
+  
+  if (dateFilter === 'custom') {
+    customDates.style.display = 'flex';
+  } else {
+    customDates.style.display = 'none';
+  }
+}
+
+// Clear transition filter
+function clearTransitionFilter() {
+  document.getElementById('transition-from-status').value = '';
+  document.getElementById('transition-to-status').value = '';
+  document.getElementById('transition-date-filter').value = 'all';
+  document.getElementById('transition-start-date').value = '';
+  document.getElementById('transition-end-date').value = '';
+  document.getElementById('transition-custom-dates').style.display = 'none';
+  
+  transitionFilterActive = false;
+  transitionFilterConfig = {
+    fromStatus: '',
+    toStatus: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  document.getElementById('transition-filter-status').innerHTML = '<i class="fas fa-info-circle"></i> Select status transition and time period, then click Apply.';
+  
+  // Close the filter panel
+  toggleTransitionFilter();
+  
+  // Re-render leads without transition filter
+  renderAllLeads();
+}
+
+// Apply transition filter
+function applyTransitionFilter() {
+  const fromStatus = document.getElementById('transition-from-status').value;
+  const toStatus = document.getElementById('transition-to-status').value;
+  const dateFilter = document.getElementById('transition-date-filter').value;
+  
+  if (!fromStatus && !toStatus) {
+    alert('Please select at least one status (From or To)');
+    return;
+  }
+  
+  transitionFilterConfig = {
+    fromStatus: fromStatus,
+    toStatus: toStatus,
+    dateFilter: dateFilter,
+    startDate: null,
+    endDate: null
+  };
+  
+  if (dateFilter === 'custom') {
+    const startDate = document.getElementById('transition-start-date').value;
+    const endDate = document.getElementById('transition-end-date').value;
+    
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+    
+    transitionFilterConfig.startDate = startDate;
+    transitionFilterConfig.endDate = endDate;
+  }
+  
+  transitionFilterActive = true;
+  
+  // Update status message
+  let statusMsg = '<i class="fas fa-check-circle"></i> <strong>Active Filter:</strong> ';
+  if (fromStatus && toStatus) {
+    statusMsg += `${fromStatus} → ${toStatus}`;
+  } else if (fromStatus) {
+    statusMsg += `From ${fromStatus} to any status`;
+  } else if (toStatus) {
+    statusMsg += `Any status → ${toStatus}`;
+  }
+  
+  if (dateFilter !== 'all') {
+    const filterLabels = {
+      'today': 'Today',
+      'yesterday': 'Yesterday',
+      'week': 'This Week',
+      '15days': 'Last 15 Days',
+      '30days': 'Last 30 Days',
+      'custom': `${transitionFilterConfig.startDate} to ${transitionFilterConfig.endDate}`
+    };
+    statusMsg += ` (${filterLabels[dateFilter]})`;
+  }
+  
+  document.getElementById('transition-filter-status').innerHTML = statusMsg;
+  
+  // Re-render leads with transition filter
+  renderAllLeads();
+}
+
+// Quick transition presets
+function applyQuickTransition(fromStatus, toStatus) {
+  document.getElementById('transition-from-status').value = fromStatus;
+  document.getElementById('transition-to-status').value = toStatus;
+  document.getElementById('transition-date-filter').value = 'all';
+  document.getElementById('transition-custom-dates').style.display = 'none';
+  
+  // Auto-apply the filter
+  applyTransitionFilter();
+}
+
+// ===== NO ACTION FILTER =====
+
+// Toggle no action filter panel
+function toggleNoActionFilter() {
+  const panel = document.getElementById('no-action-filter-panel');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Handle no action period change
+document.addEventListener('DOMContentLoaded', function() {
+  const periodSelect = document.getElementById('no-action-period');
+  if (periodSelect) {
+    periodSelect.addEventListener('change', function() {
+      const customDates = document.getElementById('no-action-custom-dates');
+      if (this.value === 'custom') {
+        customDates.style.display = 'flex';
+      } else {
+        customDates.style.display = 'none';
+      }
+    });
+  }
+});
+
+// Clear no action filter
+function clearNoActionFilter() {
+  document.getElementById('no-action-period').value = '7';
+  document.getElementById('no-action-start-date').value = '';
+  document.getElementById('no-action-end-date').value = '';
+  document.getElementById('no-action-custom-dates').style.display = 'none';
+  
+  noActionFilterActive = false;
+  noActionFilterConfig = {
+    days: 7,
+    startDate: null,
+    endDate: null
+  };
+  
+  document.getElementById('no-action-filter-status').innerHTML = '<i class="fas fa-info-circle"></i> This will show leads assigned but not updated (no status changes or notes added) during the selected period.';
+  
+  // Close the filter panel
+  toggleNoActionFilter();
+  
+  // Re-render leads without no action filter
+  renderAllLeads();
+}
+
+// Apply no action filter
+function applyNoActionFilter() {
+  const period = document.getElementById('no-action-period').value;
+  
+  if (period === 'custom') {
+    const startDate = document.getElementById('no-action-start-date').value;
+    const endDate = document.getElementById('no-action-end-date').value;
+    
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+    
+    noActionFilterConfig = {
+      days: null,
+      startDate: startDate,
+      endDate: endDate
+    };
+  } else {
+    noActionFilterConfig = {
+      days: parseInt(period),
+      startDate: null,
+      endDate: null
+    };
+  }
+  
+  noActionFilterActive = true;
+  
+  // Update status message
+  let statusMsg = '<i class="fas fa-check-circle"></i> <strong>Active Filter:</strong> ';
+  if (noActionFilterConfig.days) {
+    const labels = {
+      '1': 'last 24 hours',
+      '3': 'last 3 days',
+      '7': 'last 7 days',
+      '15': 'last 15 days',
+      '30': 'last 30 days'
+    };
+    statusMsg += `Showing leads with no activity in the ${labels[noActionFilterConfig.days]}`;
+  } else {
+    statusMsg += `Showing leads with no activity from ${noActionFilterConfig.startDate} to ${noActionFilterConfig.endDate}`;
+  }
+  
+  document.getElementById('no-action-filter-status').innerHTML = statusMsg;
+  
+  // Re-render leads with no action filter
+  renderAllLeads();
+}
+
+// Check if a lead has no action taken
+function checkLeadNoAction(lead, config) {
+  // Calculate the date range
+  const now = new Date();
+  let startDate, endDate;
+  
+  if (config.days) {
+    endDate = now;
+    startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - config.days);
+  } else {
+    startDate = new Date(config.startDate);
+    endDate = new Date(config.endDate);
+    endDate.setHours(23, 59, 59, 999);
+  }
+  
+  // Check if lead was created in the time range
+  const leadCreatedDate = new Date(lead.createdAt);
+  if (leadCreatedDate > endDate) {
+    // Lead was created after the period, exclude it
+    return false;
+  }
+  
+  // If lead was created after the start date, use creation date as start
+  const effectiveStartDate = leadCreatedDate > startDate ? leadCreatedDate : startDate;
+  
+  // Check status history for any changes in the time period
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    // Skip the first entry (initial status on creation)
+    for (let i = 1; i < lead.statusHistory.length; i++) {
+      const changeDate = new Date(lead.statusHistory[i].changedAt);
+      if (changeDate >= effectiveStartDate && changeDate <= endDate) {
+        // Status was changed during the period
+        return false;
+      }
+    }
+  }
+  
+  // Check notes for any additions in the time period
+  if (lead.notes && lead.notes.length > 0) {
+    for (const note of lead.notes) {
+      const noteDate = new Date(note.createdAt);
+      if (noteDate >= effectiveStartDate && noteDate <= endDate) {
+        // Note was added during the period
+        return false;
+      }
+    }
+  }
+  
+  // No actions were taken during the period
+  return true;
+}
+
+// ===== TRANSFER FILTER =====
+
+// Toggle transfer filter panel
+function toggleTransferFilter() {
+  const panel = document.getElementById('transfer-filter-panel');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Handle transfer date filter dropdown change
+function handleTransferDateFilter() {
+  const dateFilter = document.getElementById('transfer-date-filter').value;
+  const customDates = document.getElementById('transfer-custom-dates');
+  
+  if (dateFilter === 'custom') {
+    customDates.style.display = 'flex';
+  } else {
+    customDates.style.display = 'none';
+  }
+}
+
+// Clear transfer filter
+function clearTransferFilter() {
+  document.getElementById('transfer-from-user').value = '';
+  document.getElementById('transfer-to-user').value = '';
+  document.getElementById('transfer-date-filter').value = 'all';
+  document.getElementById('transfer-start-date').value = '';
+  document.getElementById('transfer-end-date').value = '';
+  document.getElementById('transfer-custom-dates').style.display = 'none';
+  
+  transferFilterActive = false;
+  transferFilterConfig = {
+    fromUser: '',
+    toUser: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  document.getElementById('transfer-filter-status').innerHTML = '<i class="fas fa-info-circle"></i> Select transfer criteria and time period, then click Apply.';
+  
+  // Close the filter panel
+  toggleTransferFilter();
+  
+  // Re-render leads without transfer filter
+  renderAllLeads();
+}
+
+// Apply transfer filter
+function applyTransferFilter() {
+  const fromUser = document.getElementById('transfer-from-user').value;
+  const toUser = document.getElementById('transfer-to-user').value;
+  const dateFilter = document.getElementById('transfer-date-filter').value;
+  
+  if (!fromUser && !toUser) {
+    alert('Please select at least one user (From or To)');
+    return;
+  }
+  
+  transferFilterConfig.fromUser = fromUser;
+  transferFilterConfig.toUser = toUser;
+  transferFilterConfig.dateFilter = dateFilter;
+  
+  if (dateFilter === 'custom') {
+    const startDate = document.getElementById('transfer-start-date').value;
+    const endDate = document.getElementById('transfer-end-date').value;
+    
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      alert('Start date must be before end date');
+      return;
+    }
+    
+    transferFilterConfig.startDate = startDate;
+    transferFilterConfig.endDate = endDate;
+  } else {
+    transferFilterConfig.startDate = null;
+    transferFilterConfig.endDate = null;
+  }
+  
+  transferFilterActive = true;
+  
+  // Build status message
+  let statusMsg = '<i class="fas fa-check-circle"></i> <strong>Active:</strong> Showing leads transferred ';
+  if (fromUser && toUser) {
+    statusMsg += `from ${fromUser} → ${toUser}`;
+  } else if (fromUser) {
+    statusMsg += `from ${fromUser} → Any user`;
+  } else if (toUser) {
+    statusMsg += `from Any user → ${toUser}`;
+  }
+  
+  if (dateFilter !== 'all') {
+    const filterLabels = {
+      'today': 'Today',
+      'yesterday': 'Yesterday',
+      'week': 'This Week',
+      '15days': 'Last 15 Days',
+      '30days': 'Last 30 Days',
+      'custom': `${transferFilterConfig.startDate} to ${transferFilterConfig.endDate}`
+    };
+    statusMsg += ` (${filterLabels[dateFilter]})`;
+  }
+  
+  document.getElementById('transfer-filter-status').innerHTML = statusMsg;
+  
+  // Re-render leads with transfer filter
+  renderAllLeads();
+}
+
+// Check if a lead matches the transfer filter
+function checkLeadTransfer(lead, config) {
+  if (!lead.assignmentHistory || lead.assignmentHistory.length === 0) {
+    return false;
+  }
+
+  // Get date range
+  let startDate = null;
+  let endDate = null;
+
+  if (config.dateFilter !== 'all') {
+    const dateRange = getDateRangeForTransition(config.dateFilter, config.startDate, config.endDate);
+    startDate = dateRange.start;
+    endDate = dateRange.end;
+  }
+
+  // Check assignment history for transfers
+  for (let i = 0; i < lead.assignmentHistory.length; i++) {
+    const assignment = lead.assignmentHistory[i];
+    
+    // Only check 'transferred' actions (skip initial assignments)
+    if (assignment.action !== 'transferred') {
+      continue;
+    }
+    
+    const transferDate = new Date(assignment.changedAt);
+    const fromUserName = assignment.fromUser ? assignment.fromUser.name : 'Unassigned';
+    const toUserName = assignment.toUser ? assignment.toUser.name : 'Unassigned';
+
+    // Check if date is in range
+    if (startDate && endDate) {
+      if (transferDate < startDate || transferDate > endDate) {
+        continue;
+      }
+    }
+
+    // Check if users match
+    const fromMatch = !config.fromUser || fromUserName === config.fromUser;
+    const toMatch = !config.toUser || toUserName === config.toUser;
+
+    if (fromMatch && toMatch) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Modal functions for Create Lead
+function openCreateLeadModal() {
+  const modal = document.getElementById('create-lead-modal');
+  modal.style.display = 'flex';
+  document.getElementById('create-lead-form').reset();
+  document.getElementById('create-lead-message').style.display = 'none';
+  
+  // Populate user select
+  const assignedSelect = document.getElementById('lead-assigned-to');
+  assignedSelect.innerHTML = '<option value="">Select user...</option>';
+  users.forEach(u => {
+    const option = document.createElement('option');
+    option.value = u._id;
+    option.textContent = `${u.name} (${u.email})`;
+    assignedSelect.appendChild(option);
+  });
+}
+
+function closeCreateLeadModal() {
+  const modal = document.getElementById('create-lead-modal');
+  modal.style.display = 'none';
+  document.getElementById('create-lead-form').reset();
+  document.getElementById('create-lead-message').style.display = 'none';
+}
+
+// Create lead form submission
+document.getElementById('create-lead-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const leadData = {
+    name: document.getElementById('lead-name').value.trim(),
+    contact: document.getElementById('lead-contact').value.trim(),
+    email: document.getElementById('lead-email').value.trim() || undefined,
+    city: document.getElementById('lead-city').value.trim() || undefined,
+    university: document.getElementById('lead-university').value.trim() || undefined,
+    course: document.getElementById('lead-course').value.trim() || undefined,
+    profession: document.getElementById('lead-profession').value.trim() || undefined,
+    status: document.getElementById('lead-status').value,
+    assignedTo: document.getElementById('lead-assigned-to').value
+  };
+
+  if (!leadData.name || !leadData.contact) {
+    showCreateLeadMessage('Name and contact are required', 'error');
+    return;
+  }
+
+  if (!leadData.assignedTo) {
+    showCreateLeadMessage('Please select a user to assign the lead', 'error');
+    return;
+  }
+
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/create-lead`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(leadData)
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      showCreateLeadMessage(data.message || 'Lead created successfully', 'success');
+      document.getElementById('create-lead-form').reset();
+      loadAllLeads(); // Refresh the leads list
+      setTimeout(() => closeCreateLeadModal(), 1500);
+    } else {
+      showCreateLeadMessage(data.message || 'Failed to create lead', 'error');
+    }
+  } catch (error) {
+    showCreateLeadMessage('An error occurred while creating lead', 'error');
+    console.error('Create lead error:', error);
+  }
+});
+
+function showCreateLeadMessage(message, type) {
+  const msgDiv = document.getElementById('create-lead-message');
+  msgDiv.textContent = message;
+  msgDiv.className = `message ${type}`;
+  msgDiv.style.display = 'block';
+  setTimeout(() => { msgDiv.style.display = 'none'; }, 5000);
+}
+
+// Load all leads
+async function loadAllLeads() {
+  const tbody = document.getElementById('all-leads-tbody');
+  tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 40px; color: #9ca3af;">Loading...</td></tr>';
+  
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/all-leads`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.leads) {
+      allLeadsData = data.leads;
+      
+      // Populate user filter
+      const userFilter = document.getElementById('all-leads-user-filter');
+      userFilter.innerHTML = '<option value="">All Users</option>';
+      const uniqueUsers = [...new Set(data.leads.map(l => l.assignedTo ? l.assignedTo.name : 'Unassigned'))];
+      uniqueUsers.sort().forEach(userName => {
+        const option = document.createElement('option');
+        option.value = userName;
+        option.textContent = userName;
+        userFilter.appendChild(option);
+      });
+      
+      // Populate transfer filter user dropdowns
+      const transferFromUser = document.getElementById('transfer-from-user');
+      const transferToUser = document.getElementById('transfer-to-user');
+      if (transferFromUser && transferToUser) {
+        transferFromUser.innerHTML = '<option value="">Any User</option>';
+        transferToUser.innerHTML = '<option value="">Any User</option>';
+        uniqueUsers.forEach(userName => {
+          const optionFrom = document.createElement('option');
+          optionFrom.value = userName;
+          optionFrom.textContent = userName;
+          transferFromUser.appendChild(optionFrom);
+          
+          const optionTo = document.createElement('option');
+          optionTo.value = userName;
+          optionTo.textContent = userName;
+          transferToUser.appendChild(optionTo);
+        });
+      }
+
+      renderAllLeads();
+    } else {
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 40px; color: #e11d48;">Error loading leads</td></tr>';
+    }
+  } catch (error) {
+    console.error('Error loading all leads:', error);
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 40px; color: #e11d48;">Error loading leads</td></tr>';
+  }
+}
+
+// Render all leads with filters applied
+function renderAllLeads() {
+  const tbody = document.getElementById('all-leads-tbody');
+  const searchTerm = document.getElementById('all-leads-search').value.toLowerCase();
+  const statusFilter = document.getElementById('all-leads-status-filter').value;
+  const userFilter = document.getElementById('all-leads-user-filter').value;
+
+  let filteredLeads = allLeadsData;
+
+  // Apply search filter
+  if (searchTerm) {
+    filteredLeads = filteredLeads.filter(lead => 
+      (lead.name && lead.name.toLowerCase().includes(searchTerm)) ||
+      (lead.email && lead.email.toLowerCase().includes(searchTerm)) ||
+      (lead.contact && lead.contact.toLowerCase().includes(searchTerm)) ||
+      (lead.city && lead.city.toLowerCase().includes(searchTerm)) ||
+      (lead.university && lead.university.toLowerCase().includes(searchTerm)) ||
+      (lead.course && lead.course.toLowerCase().includes(searchTerm)) ||
+      (lead.profession && lead.profession.toLowerCase().includes(searchTerm))
+    );
+  }
+
+  // Apply status filter
+  if (statusFilter) {
+    filteredLeads = filteredLeads.filter(lead => lead.status === statusFilter);
+  }
+
+  // Apply user filter
+  if (userFilter) {
+    filteredLeads = filteredLeads.filter(lead => {
+      const userName = lead.assignedTo ? lead.assignedTo.name : 'Unassigned';
+      return userName === userFilter;
+    });
+  }
+
+  // Apply transition filter if active
+  if (transitionFilterActive) {
+    filteredLeads = filteredLeads.filter(lead => {
+      return checkLeadStatusTransition(lead, transitionFilterConfig);
+    });
+  }
+
+  // Apply no action filter if active
+  if (noActionFilterActive) {
+    filteredLeads = filteredLeads.filter(lead => {
+      return checkLeadNoAction(lead, noActionFilterConfig);
+    });
+  }
+
+  // Apply transfer filter if active
+  if (transferFilterActive) {
+    filteredLeads = filteredLeads.filter(lead => {
+      return checkLeadTransfer(lead, transferFilterConfig);
+    });
+  }
+
+  // Store filtered data for pagination
+  filteredLeadsData = filteredLeads;
+  
+  // Reset to page 1 when filters change
+  currentPage = 1;
+  
+  // Render paginated results
+  renderPaginatedLeads();
+}
+
+// Check if a lead matches the status transition filter
+function checkLeadStatusTransition(lead, config) {
+  if (!lead.statusHistory || lead.statusHistory.length === 0) {
+    return false;
+  }
+
+  // Get date range
+  let startDate = null;
+  let endDate = null;
+
+  if (config.dateFilter !== 'all') {
+    const dateRange = getDateRangeForTransition(config.dateFilter, config.startDate, config.endDate);
+    startDate = dateRange.start;
+    endDate = dateRange.end;
+  }
+
+  // Check status history for transitions
+  for (let i = 1; i < lead.statusHistory.length; i++) {
+    const prevStatus = lead.statusHistory[i - 1].status;
+    const currStatus = lead.statusHistory[i].status;
+    const changeDate = new Date(lead.statusHistory[i].changedAt);
+
+    // Check if date is in range
+    if (startDate && endDate) {
+      if (changeDate < startDate || changeDate > endDate) {
+        continue;
+      }
+    }
+
+    // Check if transition matches
+    const fromMatch = !config.fromStatus || prevStatus === config.fromStatus;
+    const toMatch = !config.toStatus || currStatus === config.toStatus;
+
+    if (fromMatch && toMatch) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Get date range for transition filter
+function getDateRangeForTransition(filterValue, customStart, customEnd) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  let start, end;
+  
+  switch(filterValue) {
+    case 'today':
+      start = new Date(today);
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'yesterday':
+      start = new Date(today);
+      start.setDate(start.getDate() - 1);
+      end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'week':
+      start = new Date(today);
+      start.setDate(start.getDate() - today.getDay());
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case '15days':
+      start = new Date(today);
+      start.setDate(start.getDate() - 15);
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case '30days':
+      start = new Date(today);
+      start.setDate(start.getDate() - 30);
+      end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'custom':
+      start = new Date(customStart);
+      end = new Date(customEnd);
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      return { start: null, end: null };
+  }
+  
+  return { start, end };
+}
+
+// Render paginated leads
+function renderPaginatedLeads() {
+  const tbody = document.getElementById('all-leads-tbody');
+  
+  // Update total stats
+  document.getElementById('all-leads-total').textContent = filteredLeadsData.length;
+
+  // Uncheck select all checkbox
+  const selectAllCheckbox = document.getElementById('select-all-leads');
+  if (selectAllCheckbox) {
+    selectAllCheckbox.checked = false;
+  }
+
+  if (filteredLeadsData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
+    updatePaginationControls();
+    return;
+  }
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredLeadsData.length / leadsPerPage);
+  const startIndex = (currentPage - 1) * leadsPerPage;
+  const endIndex = Math.min(startIndex + leadsPerPage, filteredLeadsData.length);
+  const paginatedLeads = filteredLeadsData.slice(startIndex, endIndex);
+
+  // Update showing stats
+  document.getElementById('all-leads-showing').textContent = `${startIndex + 1}-${endIndex} of ${filteredLeadsData.length}`;
+
+  tbody.innerHTML = '';
+  paginatedLeads.forEach(lead => {
+    const tr = document.createElement('tr');
+    
+    const isSelected = selectedLeadIds.includes(lead._id);
+    
+    tr.innerHTML = `
+      <td><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
+      <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.name || 'N/A'}">${lead.name || 'N/A'}</td>
+      <td>${lead.contact || 'N/A'}</td>
+      <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.city || 'N/A'}">${lead.city || 'N/A'}</td>
+      <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.university || 'N/A'}">${lead.university || 'N/A'}</td>
+      <td><span class="status-badge status-${lead.status ? lead.status.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-') : 'unknown'}">${lead.status || 'Unknown'}</span></td>
+      <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td>${new Date(lead.updatedAt).toLocaleDateString()}</td>
+      <td>
+        <button onclick="viewLeadDetail('${lead._id}')" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
+          <i class="fas fa-eye"></i> View
+        </button>
+      </td>
+    `;
+    
+    tbody.appendChild(tr);
+  });
+  
+  // Update pagination controls
+  updatePaginationControls();
+}
+
+// Update pagination controls
+function updatePaginationControls() {
+  const totalPages = Math.ceil(filteredLeadsData.length / leadsPerPage);
+  
+  document.getElementById('current-page').textContent = currentPage;
+  document.getElementById('total-pages').textContent = totalPages || 1;
+  
+  // Enable/disable buttons
+  document.getElementById('first-page-btn').disabled = currentPage === 1;
+  document.getElementById('prev-page-btn').disabled = currentPage === 1;
+  document.getElementById('next-page-btn').disabled = currentPage >= totalPages;
+  document.getElementById('last-page-btn').disabled = currentPage >= totalPages;
+}
+
+// Pagination functions
+function goToFirstPage() {
+  currentPage = 1;
+  renderPaginatedLeads();
+}
+
+function goToPrevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    renderPaginatedLeads();
+  }
+}
+
+function goToNextPage() {
+  const totalPages = Math.ceil(filteredLeadsData.length / leadsPerPage);
+  if (currentPage < totalPages) {
+    currentPage++;
+    renderPaginatedLeads();
+  }
+}
+
+function goToLastPage() {
+  const totalPages = Math.ceil(filteredLeadsData.length / leadsPerPage);
+  currentPage = totalPages || 1;
+  renderPaginatedLeads();
+}
+
+function changeLeadsPerPage() {
+  leadsPerPage = parseInt(document.getElementById('leads-per-page').value);
+  currentPage = 1; // Reset to first page
+  renderPaginatedLeads();
+}
+
+// Toggle individual lead selection
+function toggleLeadSelection(leadId) {
+  if (selectedLeadIds.includes(leadId)) {
+    selectedLeadIds = selectedLeadIds.filter(id => id !== leadId);
+  } else {
+    selectedLeadIds.push(leadId);
+  }
+  updateBulkActionsBar();
+}
+
+// Toggle select all leads (only on current page)
+function toggleSelectAll() {
+  const checkbox = document.getElementById('select-all-leads');
+  const checkboxes = document.querySelectorAll('.lead-checkbox');
+  
+  if (checkbox.checked) {
+    // Select all leads on current page
+    checkboxes.forEach(cb => {
+      const leadId = cb.getAttribute('data-lead-id');
+      if (!selectedLeadIds.includes(leadId)) {
+        selectedLeadIds.push(leadId);
+      }
+      cb.checked = true;
+    });
+  } else {
+    // Deselect all leads on current page
+    checkboxes.forEach(cb => {
+      const leadId = cb.getAttribute('data-lead-id');
+      selectedLeadIds = selectedLeadIds.filter(id => id !== leadId);
+      cb.checked = false;
+    });
+  }
+  
+  updateBulkActionsBar();
+}
+
+// Update bulk actions bar
+function updateBulkActionsBar() {
+  const bar = document.getElementById('bulk-actions-bar');
+  const countSpan = document.getElementById('selected-count');
+  
+  countSpan.textContent = selectedLeadIds.length;
+  
+  if (selectedLeadIds.length > 0) {
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// Clear selection
+function clearSelection() {
+  selectedLeadIds = [];
+  document.getElementById('select-all-leads').checked = false;
+  document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = false);
+  updateBulkActionsBar();
+}
+
+// Bulk update status
+async function bulkUpdateStatus() {
+  const status = document.getElementById('bulk-status-select').value;
+  
+  if (!status) {
+    alert('Please select a status');
+    return;
+  }
+
+  if (selectedLeadIds.length === 0) {
+    alert('Please select at least one lead');
+    return;
+  }
+
+  if (!confirm(`Update ${selectedLeadIds.length} lead(s) to status "${status}"?`)) {
+    return;
+  }
+
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/bulk-update-status`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        leadIds: selectedLeadIds,
+        status: status
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      alert(data.message || 'Leads updated successfully');
+      clearSelection();
+      loadAllLeads();
+      document.getElementById('bulk-status-select').value = '';
+    } else {
+      alert(data.message || 'Failed to update leads');
+    }
+  } catch (error) {
+    alert('An error occurred while updating leads');
+    console.error('Bulk update error:', error);
+  }
+}
+
+// Bulk delete leads
+async function bulkDeleteLeads() {
+  if (selectedLeadIds.length === 0) {
+    alert('Please select at least one lead to delete');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to delete ${selectedLeadIds.length} lead(s)? This action cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    const token = getToken();
+    const response = await fetch(`${API_URL}/admin/bulk-delete-leads`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        leadIds: selectedLeadIds
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      alert(data.message || 'Leads deleted successfully');
+      clearSelection();
+      loadAllLeads();
+    } else {
+      alert(data.message || 'Failed to delete leads');
+    }
+  } catch (error) {
+    alert('An error occurred while deleting leads');
+    console.error('Bulk delete error:', error);
+  }
+}
+
+// View lead detail (reuse existing modal)
+function viewLeadDetail(leadId) {
+  openLeadModal(leadId);
+}
+
+// Setup event listeners for filters
+document.getElementById('all-leads-search').addEventListener('input', renderAllLeads);
+document.getElementById('all-leads-status-filter').addEventListener('change', renderAllLeads);
+document.getElementById('all-leads-user-filter').addEventListener('change', renderAllLeads);
+
+// Add escape key handler for create lead modal
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const createLeadModal = document.getElementById('create-lead-modal');
+    if (createLeadModal && createLeadModal.style.display === 'flex') {
+      closeCreateLeadModal();
+      return;
+    }
+  }
+});
+
+// Auto-load all leads when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  const allLeadsSection = document.getElementById('all-leads-tbody');
+  if (allLeadsSection) {
+    loadAllLeads();
+  }
+});
