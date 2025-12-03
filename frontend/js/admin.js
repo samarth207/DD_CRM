@@ -163,29 +163,33 @@ function downloadBrochurePDF(filePath, fileName) {
     })
     .catch(error => {
       console.error('Download error:', error);
-      alert('Failed to download brochure');
+      showToast('Download Failed', 'Failed to download brochure', 'error');
     });
 }
 
 async function deleteBrochure(id) {
-  if (!confirm('Are you sure you want to delete this brochure?')) return;
-  try {
-    const token = getToken();
-    const response = await fetch(`${API_URL}/admin/brochure/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await response.json();
-    if (response.ok) {
-      showBrochureMessage(data.message || 'Brochure deleted successfully', 'success');
-      loadBrochuresAdmin();
-    } else {
-      alert(data.message || 'Delete failed');
+  showConfirmModal('Delete Brochure', 'Are you sure you want to delete this brochure?<br><br><small style="color: #ef4444;">⚠️ This action cannot be undone.</small>', async () => {
+    try {
+      showLoading('Deleting Brochure...', 'Please wait');
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/brochure/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      hideLoading();
+      if (response.ok) {
+        showBrochureMessage(data.message || 'Brochure deleted successfully', 'success');
+        loadBrochuresAdmin();
+      } else {
+        showToast('Delete Failed', data.message || 'Delete failed', 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showToast('Error', 'An error occurred during delete', 'error');
+      console.error('Brochure delete error:', error);
     }
-  } catch (error) {
-    alert('An error occurred during delete');
-    console.error('Brochure delete error:', error);
-  }
+  });
 }
 
 // Check authentication
@@ -1766,12 +1770,12 @@ function applyOverallCustomDateFilter() {
   const endDate = document.getElementById('overall-end-date').value;
   
   if (!startDate || !endDate) {
-    alert('Please select both start and end dates');
+    showToast('Date Required', 'Please select both start and end dates', 'warning');
     return;
   }
   
   if (new Date(startDate) > new Date(endDate)) {
-    alert('Start date must be before end date');
+    showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
     return;
   }
   
@@ -1841,12 +1845,12 @@ function applyUserCustomDateFilter() {
   const endDate = document.getElementById('user-end-date').value;
   
   if (!startDate || !endDate) {
-    alert('Please select both start and end dates');
+    showToast('Date Required', 'Please select both start and end dates', 'warning');
     return;
   }
   
   if (new Date(startDate) > new Date(endDate)) {
-    alert('Start date must be before end date');
+    showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
     return;
   }
   
@@ -1967,7 +1971,7 @@ function applyTransitionFilter() {
   const dateFilter = document.getElementById('transition-date-filter').value;
   
   if (!fromStatus && !toStatus) {
-    alert('Please select at least one status (From or To)');
+    showToast('Invalid Filter', 'Please select at least one status (From or To)', 'warning');
     return;
   }
   
@@ -1984,12 +1988,12 @@ function applyTransitionFilter() {
     const endDate = document.getElementById('transition-end-date').value;
     
     if (!startDate || !endDate) {
-      alert('Please select both start and end dates');
+      showToast('Date Required', 'Please select both start and end dates', 'warning');
       return;
     }
     
     if (new Date(startDate) > new Date(endDate)) {
-      alert('Start date must be before end date');
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
       return;
     }
     
@@ -2024,7 +2028,12 @@ function applyTransitionFilter() {
   document.getElementById('transition-filter-status').innerHTML = statusMsg;
   
   // Re-render leads with transition filter
-  renderAllLeads();
+  showLoading('Applying Filter...', 'Searching for status transitions...');
+  setTimeout(() => {
+    renderAllLeads();
+    hideLoading();
+    showToast('Filter Applied', 'Status transition filter is now active', 'success');
+  }, 300);
 }
 
 // Quick transition presets
@@ -2097,12 +2106,12 @@ function applyNoActionFilter() {
     const endDate = document.getElementById('no-action-end-date').value;
     
     if (!startDate || !endDate) {
-      alert('Please select both start and end dates');
+      showToast('Date Required', 'Please select both start and end dates', 'warning');
       return;
     }
     
     if (new Date(startDate) > new Date(endDate)) {
-      alert('Start date must be before end date');
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
       return;
     }
     
@@ -2139,7 +2148,12 @@ function applyNoActionFilter() {
   document.getElementById('no-action-filter-status').innerHTML = statusMsg;
   
   // Re-render leads with no action filter
-  renderAllLeads();
+  showLoading('Applying Filter...', 'Searching for inactive leads...');
+  setTimeout(() => {
+    renderAllLeads();
+    hideLoading();
+    showToast('Filter Applied', 'No action filter is now active', 'success');
+  }, 300);
 }
 
 // Check if a lead has no action taken
@@ -2253,7 +2267,7 @@ function applyTransferFilter() {
   const dateFilter = document.getElementById('transfer-date-filter').value;
   
   if (!fromUser && !toUser) {
-    alert('Please select at least one user (From or To)');
+    showToast('Invalid Filter', 'Please select at least one user (From or To)', 'warning');
     return;
   }
   
@@ -2266,12 +2280,12 @@ function applyTransferFilter() {
     const endDate = document.getElementById('transfer-end-date').value;
     
     if (!startDate || !endDate) {
-      alert('Please select both start and end dates');
+      showToast('Date Required', 'Please select both start and end dates', 'warning');
       return;
     }
     
     if (new Date(startDate) > new Date(endDate)) {
-      alert('Start date must be before end date');
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
       return;
     }
     
@@ -2309,7 +2323,12 @@ function applyTransferFilter() {
   document.getElementById('transfer-filter-status').innerHTML = statusMsg;
   
   // Re-render leads with transfer filter
-  renderAllLeads();
+  showLoading('Applying Filter...', 'Searching for lead transfers...');
+  setTimeout(() => {
+    renderAllLeads();
+    hideLoading();
+    showToast('Filter Applied', 'Transfer filter is now active', 'success');
+  }, 300);
 }
 
 // Check if a lead matches the transfer filter
@@ -2463,33 +2482,62 @@ async function loadAllLeads() {
     if (response.ok && data.leads) {
       allLeadsData = data.leads;
       
-      // Populate user filter
+      // Fetch all users from the system (not just from leads)
+      let allUsers = [];
+      try {
+        const usersResponse = await fetch(`${API_URL}/admin/users`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (usersResponse.ok) {
+          allUsers = await usersResponse.json();
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err);
+      }
+      
+      // Populate user filter with all users from the system
       const userFilter = document.getElementById('all-leads-user-filter');
       userFilter.innerHTML = '<option value="">All Users</option>';
-      const uniqueUsers = [...new Set(data.leads.map(l => l.assignedTo ? l.assignedTo.name : 'Unassigned'))];
-      uniqueUsers.sort().forEach(userName => {
-        const option = document.createElement('option');
-        option.value = userName;
-        option.textContent = userName;
-        userFilter.appendChild(option);
-      });
+      if (allUsers.length > 0) {
+        allUsers.sort((a, b) => a.name.localeCompare(b.name)).forEach(user => {
+          const option = document.createElement('option');
+          option.value = user.name;
+          option.textContent = user.name;
+          userFilter.appendChild(option);
+        });
+      }
       
-      // Populate transfer filter user dropdowns
+      // Populate transfer filter user dropdowns with all users from the system
       const transferFromUser = document.getElementById('transfer-from-user');
       const transferToUser = document.getElementById('transfer-to-user');
-      if (transferFromUser && transferToUser) {
+      if (transferFromUser && transferToUser && allUsers.length > 0) {
         transferFromUser.innerHTML = '<option value="">Any User</option>';
         transferToUser.innerHTML = '<option value="">Any User</option>';
-        uniqueUsers.forEach(userName => {
+        
+        allUsers.sort((a, b) => a.name.localeCompare(b.name)).forEach(user => {
           const optionFrom = document.createElement('option');
-          optionFrom.value = userName;
-          optionFrom.textContent = userName;
+          optionFrom.value = user.name;
+          optionFrom.textContent = user.name;
           transferFromUser.appendChild(optionFrom);
           
           const optionTo = document.createElement('option');
-          optionTo.value = userName;
-          optionTo.textContent = userName;
+          optionTo.value = user.name;
+          optionTo.textContent = user.name;
           transferToUser.appendChild(optionTo);
+        });
+      }
+      
+      // Populate bulk transfer dropdown with all user IDs from the system
+      const bulkTransferSelect = document.getElementById('bulk-transfer-select');
+      if (bulkTransferSelect && allUsers.length > 0) {
+        bulkTransferSelect.innerHTML = '<option value="">Transfer To...</option>';
+        
+        allUsers.sort((a, b) => a.name.localeCompare(b.name)).forEach(user => {
+          const option = document.createElement('option');
+          option.value = user._id;
+          option.textContent = user.name;
+          bulkTransferSelect.appendChild(option);
         });
       }
 
@@ -2771,32 +2819,43 @@ function toggleLeadSelection(leadId) {
     selectedLeadIds.push(leadId);
   }
   updateBulkActionsBar();
+  
+  // Update Select button state if input has value
+  const limitInput = document.getElementById('limit-selection-count');
+  if (limitInput.value) {
+    updateSelectButtonState(selectedLeadIds.length > 0);
+  }
 }
 
 // Toggle select all leads (only on current page)
 function toggleSelectAll() {
   const checkbox = document.getElementById('select-all-leads');
-  const checkboxes = document.querySelectorAll('.lead-checkbox');
   
   if (checkbox.checked) {
-    // Select all leads on current page
+    // Select ALL filtered leads (across all pages)
+    selectedLeadIds = [];
+    filteredLeadsData.forEach(lead => {
+      selectedLeadIds.push(lead._id);
+    });
+    
+    // Check visible checkboxes on current page
+    const checkboxes = document.querySelectorAll('.lead-checkbox');
     checkboxes.forEach(cb => {
-      const leadId = cb.getAttribute('data-lead-id');
-      if (!selectedLeadIds.includes(leadId)) {
-        selectedLeadIds.push(leadId);
-      }
       cb.checked = true;
     });
+    
+    showToast('Selection Complete', `Selected all ${selectedLeadIds.length} filtered lead(s) across all pages`, 'success');
   } else {
-    // Deselect all leads on current page
+    // Deselect all leads
+    selectedLeadIds = [];
+    const checkboxes = document.querySelectorAll('.lead-checkbox');
     checkboxes.forEach(cb => {
-      const leadId = cb.getAttribute('data-lead-id');
-      selectedLeadIds = selectedLeadIds.filter(id => id !== leadId);
       cb.checked = false;
     });
   }
   
   updateBulkActionsBar();
+  updateSelectButtonState(selectedLeadIds.length > 0);
 }
 
 // Update bulk actions bar
@@ -2819,93 +2878,400 @@ function clearSelection() {
   document.getElementById('select-all-leads').checked = false;
   document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = false);
   updateBulkActionsBar();
+  updateSelectButtonState(false);
+}
+
+// Update Select button styling based on selection state
+function updateSelectButtonState(hasSelection) {
+  const limitInput = document.getElementById('limit-selection-count');
+  const selectBtn = limitInput.parentElement.querySelector('button');
+  
+  if (hasSelection) {
+    selectBtn.style.background = '#10b981';
+    selectBtn.style.borderColor = '#10b981';
+    selectBtn.style.color = 'white';
+    selectBtn.innerHTML = '<i class="fas fa-check-circle"></i> Selected';
+  } else {
+    selectBtn.style.background = '';
+    selectBtn.style.borderColor = '';
+    selectBtn.style.color = '';
+    selectBtn.innerHTML = '<i class="fas fa-check-square"></i> Select';
+  }
+}
+
+// Reset select button when input changes
+function resetSelectButtonState() {
+  updateSelectButtonState(false);
+}
+
+// Show loading overlay
+function showLoading(message = 'Processing...', submessage = 'Please wait while we apply your changes') {
+  document.getElementById('loading-message').textContent = message;
+  document.getElementById('loading-submessage').textContent = submessage;
+  document.getElementById('loading-overlay').style.display = 'block';
+}
+
+// Hide loading overlay
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+// Show confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').innerHTML = message;
+  document.getElementById('confirmation-modal').style.display = 'block';
+  
+  const confirmBtn = document.getElementById('confirm-action-btn');
+  confirmBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+}
+
+// Close confirmation modal
+function closeConfirmModal() {
+  document.getElementById('confirmation-modal').style.display = 'none';
+}
+
+// Show toast notification
+function showToast(title, message, type = 'success') {
+  const toast = document.getElementById('toast-notification');
+  const icon = document.getElementById('toast-icon');
+  const toastTitle = document.getElementById('toast-title');
+  const toastMessage = document.getElementById('toast-message');
+  
+  // Set colors and icons based on type
+  if (type === 'success') {
+    toast.style.borderLeftColor = '#10b981';
+    icon.className = 'fas fa-check-circle';
+    icon.style.color = '#10b981';
+    toastTitle.textContent = title || 'Success';
+  } else if (type === 'error') {
+    toast.style.borderLeftColor = '#ef4444';
+    icon.className = 'fas fa-exclamation-circle';
+    icon.style.color = '#ef4444';
+    toastTitle.textContent = title || 'Error';
+  } else if (type === 'warning') {
+    toast.style.borderLeftColor = '#f59e0b';
+    icon.className = 'fas fa-exclamation-triangle';
+    icon.style.color = '#f59e0b';
+    toastTitle.textContent = title || 'Warning';
+  }
+  
+  toastMessage.textContent = message;
+  toast.style.display = 'block';
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => closeToast(), 5000);
+}
+
+// Close toast
+function closeToast() {
+  document.getElementById('toast-notification').style.display = 'none';
 }
 
 // Bulk update status
-async function bulkUpdateStatus() {
-  const status = document.getElementById('bulk-status-select').value;
+// Select limited number of leads
+function selectLimitedLeads() {
+  const limitInput = document.getElementById('limit-selection-count');
+  const limit = parseInt(limitInput.value);
   
-  if (!status) {
-    alert('Please select a status');
+  if (!limit || limit < 1) {
+    showToast('Invalid Input', 'Please enter a valid number of leads to select', 'warning');
+    return;
+  }
+  
+  if (filteredLeadsData.length === 0) {
+    showToast('No Leads', 'No leads available to select', 'warning');
+    return;
+  }
+  
+  // Clear current selection
+  clearSelection();
+  
+  // Select first N leads from ALL filtered data (across all pages)
+  const leadsToSelect = Math.min(limit, filteredLeadsData.length);
+  for (let i = 0; i < leadsToSelect; i++) {
+    selectedLeadIds.push(filteredLeadsData[i]._id);
+  }
+  
+  // Check visible checkboxes on current page that are selected
+  const checkboxes = document.querySelectorAll('.lead-checkbox');
+  checkboxes.forEach(cb => {
+    const leadId = cb.getAttribute('data-lead-id');
+    if (selectedLeadIds.includes(leadId)) {
+      cb.checked = true;
+    }
+  });
+  
+  updateBulkActionsBar();
+  updateSelectButtonState(true);
+  
+  if (leadsToSelect > leadsPerPage) {
+    showToast('Leads Selected', `Selected first ${leadsToSelect} lead(s) across multiple pages`, 'success');
+  } else {
+    showToast('Leads Selected', `Selected first ${leadsToSelect} lead(s)`, 'success');
+  }
+}
+
+// Combined bulk action (status update + transfer)
+async function performBulkActions() {
+  const status = document.getElementById('bulk-status-select').value;
+  const toUserId = document.getElementById('bulk-transfer-select').value;
+  
+  if (!status && !toUserId) {
+    showToast('No Action Selected', 'Please select a status to update and/or a user to transfer leads to', 'warning');
     return;
   }
 
   if (selectedLeadIds.length === 0) {
-    alert('Please select at least one lead');
+    showToast('No Selection', 'Please select at least one lead', 'warning');
     return;
   }
 
-  if (!confirm(`Update ${selectedLeadIds.length} lead(s) to status "${status}"?`)) {
-    return;
-  }
-
-  try {
-    const token = getToken();
-    const response = await fetch(`${API_URL}/admin/bulk-update-status`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        leadIds: selectedLeadIds,
-        status: status
-      })
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      alert(data.message || 'Leads updated successfully');
-      clearSelection();
-      loadAllLeads();
-      document.getElementById('bulk-status-select').value = '';
-    } else {
-      alert(data.message || 'Failed to update leads');
+  // Check if trying to transfer leads already assigned to the target user
+  if (toUserId) {
+    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
+    const alreadyAssigned = allLeadsData.filter(lead => 
+      selectedLeadIds.includes(lead._id) && 
+      lead.assignedTo && 
+      lead.assignedTo._id === toUserId
+    );
+    
+    if (alreadyAssigned.length > 0) {
+      showToast('Invalid Transfer', `${alreadyAssigned.length} lead(s) are already assigned to ${toUserName}. Please deselect them or choose a different user.`, 'error');
+      return;
     }
-  } catch (error) {
-    alert('An error occurred while updating leads');
-    console.error('Bulk update error:', error);
   }
+
+  // Build confirmation message
+  let actions = [];
+  if (status) actions.push(`Update status to <strong>"${status}"</strong>`);
+  if (toUserId) {
+    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
+    actions.push(`Transfer to <strong>${toUserName}</strong>`);
+  }
+  
+  const message = `${actions.join(' and ')} for <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #6b7280;">This action will be performed in sequence.</small>`;
+  
+  showConfirmModal('Confirm Bulk Actions', message, async () => {
+    try {
+      showLoading('Applying Actions...', 'Please wait while we process your request');
+      
+      const token = getToken();
+      let successMessages = [];
+      
+      // Step 1: Update status if selected
+      if (status) {
+        const statusResponse = await fetch(`${API_URL}/admin/bulk-update-status`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            leadIds: selectedLeadIds,
+            status: status
+          })
+        });
+
+        const statusData = await statusResponse.json();
+        
+        if (!statusResponse.ok) {
+          hideLoading();
+          showToast('Status Update Failed', statusData.message || 'Failed to update lead status', 'error');
+          return;
+        }
+        
+        successMessages.push(`Status updated to "${status}"`);
+      }
+      
+      // Step 2: Transfer leads if user selected
+      if (toUserId) {
+        const transferResponse = await fetch(`${API_URL}/admin/bulk-transfer-leads`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            leadIds: selectedLeadIds,
+            toUserId: toUserId
+          })
+        });
+
+        const transferData = await transferResponse.json();
+        
+        if (!transferResponse.ok) {
+          hideLoading();
+          showToast('Transfer Failed', transferData.message || 'Failed to transfer leads', 'error');
+          return;
+        }
+        
+        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
+        successMessages.push(`Transferred to ${toUserName}`);
+      }
+      
+      // Success - reload and show message
+      hideLoading();
+      await loadAllLeads();
+      
+      // Reset dropdowns but keep selection for additional actions
+      document.getElementById('bulk-status-select').value = '';
+      document.getElementById('bulk-transfer-select').value = '';
+      
+      showToast('Actions Completed', `${successMessages.join(' and ')} for ${selectedLeadIds.length} lead(s). Selection preserved for additional actions.`, 'success');
+      
+    } catch (error) {
+      hideLoading();
+      showToast('Error', 'An error occurred while performing actions', 'error');
+      console.error('Bulk action error:', error);
+    }
+  });
+}
+
+// Legacy function kept for compatibility
+async function bulkUpdateStatus() {
+  const status = document.getElementById('bulk-status-select').value;
+  
+  if (!status) {
+    showToast('No Selection', 'Please select a status', 'warning');
+    return;
+  }
+
+  if (selectedLeadIds.length === 0) {
+    showToast('No Selection', 'Please select at least one lead', 'warning');
+    return;
+  }
+
+  showConfirmModal('Confirm Status Update', `Update <strong>${selectedLeadIds.length} lead(s)</strong> to status <strong>"${status}"</strong>?`, async () => {
+    try {
+      showLoading('Updating Status...', 'Please wait');
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/bulk-update-status`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          leadIds: selectedLeadIds,
+          status: status
+        })
+      });
+
+      const data = await response.json();
+      hideLoading();
+
+      if (response.ok) {
+        showToast('Success', data.message || 'Leads updated successfully. Selection preserved for additional actions.', 'success');
+        // Don't clear selection - allows chaining operations (e.g., update status then transfer)
+        loadAllLeads();
+        document.getElementById('bulk-status-select').value = '';
+      } else {
+        showToast('Update Failed', data.message || 'Failed to update leads', 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showToast('Error', 'An error occurred while updating leads', 'error');
+      console.error('Bulk update error:', error);
+    }
+  });
+}
+
+// Bulk transfer leads
+async function bulkTransferLeads() {
+  const toUserId = document.getElementById('bulk-transfer-select').value;
+  
+  if (!toUserId) {
+    showToast('No Selection', 'Please select a user to transfer leads to', 'warning');
+    return;
+  }
+
+  if (selectedLeadIds.length === 0) {
+    showToast('No Selection', 'Please select at least one lead to transfer', 'warning');
+    return;
+  }
+
+  const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
+  showConfirmModal('Confirm Transfer', `Transfer <strong>${selectedLeadIds.length} lead(s)</strong> to <strong>${toUserName}</strong>?`, async () => {
+    try {
+      showLoading('Transferring Leads...', 'Please wait');
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/bulk-transfer-leads`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          leadIds: selectedLeadIds,
+          toUserId: toUserId
+        })
+      });
+
+      const data = await response.json();
+      hideLoading();
+
+      if (response.ok) {
+        showToast('Success', data.message || 'Leads transferred successfully. Selection preserved for additional actions.', 'success');
+        // Don't clear selection - allows chaining operations
+        loadAllLeads();
+        document.getElementById('bulk-transfer-select').value = '';
+      } else {
+        showToast('Transfer Failed', data.message || 'Failed to transfer leads', 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showToast('Error', 'An error occurred while transferring leads', 'error');
+      console.error('Bulk transfer error:', error);
+    }
+  });
 }
 
 // Bulk delete leads
 async function bulkDeleteLeads() {
   if (selectedLeadIds.length === 0) {
-    alert('Please select at least one lead to delete');
+    showToast('No Selection', 'Please select at least one lead to delete', 'warning');
     return;
   }
 
-  if (!confirm(`Are you sure you want to delete ${selectedLeadIds.length} lead(s)? This action cannot be undone.`)) {
-    return;
-  }
+  const message = `Are you sure you want to delete <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #ef4444;">⚠️ This action cannot be undone.</small>`;
+  
+  showConfirmModal('Confirm Deletion', message, async () => {
+    try {
+      showLoading('Deleting Leads...', 'Please wait while we delete the selected leads');
+      
+      const token = getToken();
+      const response = await fetch(`${API_URL}/admin/bulk-delete-leads`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          leadIds: selectedLeadIds
+        })
+      });
 
-  try {
-    const token = getToken();
-    const response = await fetch(`${API_URL}/admin/bulk-delete-leads`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        leadIds: selectedLeadIds
-      })
-    });
+      const data = await response.json();
+      
+      hideLoading();
 
-    const data = await response.json();
-
-    if (response.ok) {
-      alert(data.message || 'Leads deleted successfully');
-      clearSelection();
-      loadAllLeads();
-    } else {
-      alert(data.message || 'Failed to delete leads');
+      if (response.ok) {
+        showToast('Leads Deleted', data.message || `${selectedLeadIds.length} lead(s) deleted successfully`, 'success');
+        clearSelection();
+        loadAllLeads();
+      } else {
+        showToast('Deletion Failed', data.message || 'Failed to delete leads', 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showToast('Error', 'An error occurred while deleting leads', 'error');
+      console.error('Bulk delete error:', error);
     }
-  } catch (error) {
-    alert('An error occurred while deleting leads');
-    console.error('Bulk delete error:', error);
-  }
+  });
 }
 
 // View lead detail (reuse existing modal)

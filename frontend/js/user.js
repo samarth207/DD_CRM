@@ -1,3 +1,77 @@
+// ===== MODAL AND NOTIFICATION HELPERS =====
+// Show loading overlay
+function showLoading(message = 'Processing...', submessage = 'Please wait') {
+  document.getElementById('loading-message').textContent = message;
+  document.getElementById('loading-submessage').textContent = submessage;
+  document.getElementById('loading-overlay').style.display = 'block';
+}
+
+// Hide loading overlay
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+// Show confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').innerHTML = message;
+  document.getElementById('confirmation-modal').style.display = 'block';
+  
+  const confirmBtn = document.getElementById('confirm-action-btn');
+  confirmBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+}
+
+// Close confirmation modal
+function closeConfirmModal() {
+  document.getElementById('confirmation-modal').style.display = 'none';
+}
+
+// Show toast notification
+function showToast(title, message, type = 'success') {
+  const toast = document.getElementById('toast-notification');
+  const icon = document.getElementById('toast-icon');
+  const toastTitle = document.getElementById('toast-title');
+  const toastMessage = document.getElementById('toast-message');
+  
+  // Set colors and icons based on type
+  if (type === 'success') {
+    toast.style.borderLeftColor = '#10b981';
+    icon.className = 'fas fa-check-circle';
+    icon.style.color = '#10b981';
+    toastTitle.textContent = title || 'Success';
+  } else if (type === 'error') {
+    toast.style.borderLeftColor = '#ef4444';
+    icon.className = 'fas fa-exclamation-circle';
+    icon.style.color = '#ef4444';
+    toastTitle.textContent = title || 'Error';
+  } else if (type === 'warning') {
+    toast.style.borderLeftColor = '#f59e0b';
+    icon.className = 'fas fa-exclamation-triangle';
+    icon.style.color = '#f59e0b';
+    toastTitle.textContent = title || 'Warning';
+  } else if (type === 'info') {
+    toast.style.borderLeftColor = '#3b82f6';
+    icon.className = 'fas fa-info-circle';
+    icon.style.color = '#3b82f6';
+    toastTitle.textContent = title || 'Info';
+  }
+  
+  toastMessage.textContent = message;
+  toast.style.display = 'block';
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => closeToast(), 5000);
+}
+
+// Close toast
+function closeToast() {
+  document.getElementById('toast-notification').style.display = 'none';
+}
+
+// ===== BROCHURES =====
 // Load brochures on dashboard
 let allBrochures = [];
 document.addEventListener('DOMContentLoaded', loadBrochures);
@@ -159,7 +233,7 @@ function downloadBrochure(filePath, fileName) {
     })
     .catch(error => {
       console.error('Error downloading brochure:', error);
-      alert('Error downloading brochure');
+      showToast('Download Failed', 'Error downloading brochure', 'error');
     });
 }
 
@@ -167,7 +241,7 @@ async function downloadAllBrochures() {
   try {
     const token = getToken();
     if (!token) {
-      alert('Please login to download brochures');
+      showToast('Login Required', 'Please login to download brochures', 'warning');
       return;
     }
 
@@ -207,10 +281,10 @@ async function downloadAllBrochures() {
     button.innerHTML = originalHTML;
     
     // Show success message
-    alert('All brochures downloaded successfully!');
+    showToast('Download Complete', 'All brochures downloaded successfully!', 'success');
   } catch (error) {
     console.error('Error downloading all brochures:', error);
-    alert('Error downloading brochures: ' + error.message);
+    showToast('Download Failed', 'Error downloading brochures: ' + error.message, 'error');
     
     // Reset button in case of error
     const button = event.target.closest('button');
@@ -219,20 +293,22 @@ async function downloadAllBrochures() {
   }
 }
 
-function downloadBulkBrochures() {
+async function downloadBulkBrochures() {
   const univFilter = document.getElementById('filter-university').value;
   if (!univFilter) {
-    alert('Please select a university to download all its brochures.');
+    showToast('Selection Required', 'Please select a university to download all its brochures.', 'warning');
     return;
   }
   
   const filtered = allBrochures.filter(b => b.university === univFilter);
   if (filtered.length === 0) {
-    alert('No brochures found for this university.');
+    showToast('No Brochures', 'No brochures found for this university.', 'warning');
     return;
   }
   
-  // Download each brochure
+  showLoading('Downloading Brochures', `Preparing ${filtered.length} brochure(s) for ${univFilter}...`);
+  
+  // Download each brochure with staggered timing
   filtered.forEach((brochure, index) => {
     setTimeout(() => {
       const link = document.createElement('a');
@@ -244,7 +320,10 @@ function downloadBulkBrochures() {
     }, index * 500); // Stagger downloads by 500ms
   });
   
-  alert(`Downloading ${filtered.length} brochure(s) for ${univFilter}...`);
+  // Hide loading after downloads start
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  hideLoading();
+  showToast('Download Started', `Downloading ${filtered.length} brochure(s)...`, 'info');
 }
 
 // Check authentication
@@ -953,17 +1032,15 @@ function applyUserStatusCustomDateFilter() {
   const startDate = document.getElementById('user-status-start-date').value;
   const endDate = document.getElementById('user-status-end-date').value;
   
-  if (!startDate || !endDate) {
-    alert('Please select both start and end dates');
-    return;
-  }
-  
-  if (new Date(startDate) > new Date(endDate)) {
-    alert('Start date must be before end date');
-    return;
-  }
-  
-  const dateRange = getDateRange('custom', startDate, endDate);
+    if (!startDate || !endDate) {
+      showToast('Date Required', 'Please select both start and end dates', 'warning');
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
+      return;
+    }  const dateRange = getDateRange('custom', startDate, endDate);
   const filteredLeads = filterLeadsByDateRange(allLeads, dateRange);
   
   const statusBreakdown = {};
@@ -1041,7 +1118,7 @@ async function scheduleFollowUp() {
   const dateTimeValue = dateTimeInput.value;
   
   if (!dateTimeValue) {
-    alert('Please select a date and time for the follow-up');
+    showToast('Date Required', 'Please select a date and time for the follow-up', 'warning');
     return;
   }
   
@@ -1049,7 +1126,7 @@ async function scheduleFollowUp() {
   const now = new Date();
   
   if (followUpDate <= now) {
-    alert('Follow-up time must be in the future');
+    showToast('Invalid Date', 'Follow-up time must be in the future', 'warning');
     return;
   }
   

@@ -25,7 +25,7 @@
       </a>
       <a href="#" class="sidebar-nav-item" data-section="all-leads">
         <i class="fas fa-database"></i>
-        <span>All Leads</span>
+        <span>All Leads Management</span>
       </a>
       <a href="#" class="sidebar-nav-item" data-section="performance">
         <i class="fas fa-bolt"></i>
@@ -81,30 +81,6 @@
           <span id="overall-dashboard-toggle" class="collapse-icon">−</span>
         </h2>
         <div id="overall-dashboard-body">
-        <!-- Global Lead Search -->
-        <div class="form-group" style="margin-bottom:16px;">
-          <input type="text" id="global-lead-search" placeholder="Search leads by name, email, phone, company, or status..." autocomplete="off">
-        </div>
-        <div id="global-search-results" style="display:none; margin-top:12px;">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Contact</th>
-                <th>Email</th>
-                <th>City</th>
-                <th>University</th>
-                <th>Course</th>
-                <th>Profession</th>
-                <th>Status</th>
-                <th>Assigned To</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody id="global-search-tbody"></tbody>
-          </table>
-          <div id="global-search-empty" style="display:none; padding:12px; color:#6b7280; text-align:center; font-size:13px;">No matching leads found.</div>
-        </div>
         
         <div id="overall-stats-container">
         <div id="overall-stats">
@@ -425,10 +401,25 @@
 
         <!-- Bulk Actions -->
         <div id="bulk-actions-bar" style="display: none; margin-bottom: 16px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px;">
+          <div style="margin-bottom: 8px; padding: 6px 10px; background: #dbeafe; border-radius: 4px; font-size: 11px; color: #1e40af;">
+            <i class="fas fa-info-circle"></i> <strong>Tip:</strong> You can perform combined operations! Select leads, update status AND transfer to another user in one action.
+          </div>
           <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <span style="font-weight: 600; color: #0369a1;">
               <span id="selected-count">0</span> lead(s) selected
             </span>
+            
+            <button onclick="clearSelection()" class="btn" style="font-size: 11px; padding: 4px 10px; background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db;">
+              <i class="fas fa-times-circle"></i> Clear Selection
+            </button>
+            
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label style="font-size: 12px; color: #6b7280; white-space: nowrap;">Select first:</label>
+              <input type="number" id="limit-selection-count" min="1" placeholder="e.g., 30" style="width: 80px; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;" oninput="resetSelectButtonState()">
+              <button onclick="selectLimitedLeads()" class="btn btn-secondary" style="font-size: 12px; padding: 6px 10px;">
+                <i class="fas fa-check-square"></i> Select
+              </button>
+            </div>
             
             <select id="bulk-status-select" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white;">
               <option value="">Change Status...</option>
@@ -444,16 +435,20 @@
               <option value="Junk/not interested">Junk/not interested</option>
             </select>
             
-            <button onclick="bulkUpdateStatus()" class="btn btn-primary" style="font-size: 12px; padding: 6px 12px;">
-              <i class="fas fa-edit"></i> Update Status
+            <select id="bulk-transfer-select" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white;">
+              <option value="">Transfer To...</option>
+            </select>
+            
+            <button onclick="performBulkActions()" class="btn btn-primary" style="font-size: 12px; padding: 6px 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+              <i class="fas fa-bolt"></i> Apply Actions
             </button>
             
             <button onclick="bulkDeleteLeads()" class="btn btn-danger" style="font-size: 12px; padding: 6px 12px; background: #dc2626;">
-              <i class="fas fa-trash"></i> Delete Selected
+              <i class="fas fa-trash"></i> Delete
             </button>
             
             <button onclick="clearSelection()" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">
-              Clear Selection
+              <i class="fas fa-times"></i> Clear
             </button>
           </div>
         </div>
@@ -990,6 +985,63 @@
       <div id="create-lead-message" class="message" style="display: none; margin-top:16px;"></div>
     </div>
   </div>
+  
+  <!-- Loading Overlay with Progress -->
+  <div id="loading-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(4px);">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px 40px; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); min-width: 320px; text-align: center;">
+      <div style="margin-bottom: 20px;">
+        <div style="width: 60px; height: 60px; border: 4px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+      </div>
+      <div id="loading-message" style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">Processing...</div>
+      <div id="loading-submessage" style="font-size: 13px; color: #6b7280;">Please wait while we apply your changes</div>
+      <div id="progress-bar-container" style="margin-top: 16px; background: #e5e7eb; border-radius: 8px; height: 8px; overflow: hidden; display: none;">
+        <div id="progress-bar" style="background: linear-gradient(90deg, #3b82f6, #8b5cf6); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Confirmation Modal -->
+  <div id="confirmation-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: 9998; backdrop-filter: blur(2px);">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); min-width: 400px; max-width: 500px;">
+      <div style="margin-bottom: 16px;">
+        <h3 id="confirm-title" style="font-size: 18px; font-weight: 600; color: #1f2937; margin: 0 0 8px 0;">Confirm Action</h3>
+        <p id="confirm-message" style="font-size: 14px; color: #6b7280; margin: 0; line-height: 1.5;"></p>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button onclick="closeConfirmModal()" class="btn" style="padding: 8px 16px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;">
+          <i class="fas fa-times"></i> Cancel
+        </button>
+        <button id="confirm-action-btn" class="btn btn-primary" style="padding: 8px 16px;">
+          <i class="fas fa-check"></i> Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Success/Error Toast -->
+  <div id="toast-notification" style="display: none; position: fixed; top: 80px; right: 20px; background: white; padding: 16px 20px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2); z-index: 10000; min-width: 300px; max-width: 400px; border-left: 4px solid #10b981;">
+    <div style="display: flex; align-items: start; gap: 12px;">
+      <i id="toast-icon" class="fas fa-check-circle" style="font-size: 20px; color: #10b981; margin-top: 2px;"></i>
+      <div style="flex: 1;">
+        <div id="toast-title" style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">Success</div>
+        <div id="toast-message" style="font-size: 13px; color: #6b7280; line-height: 1.4;"></div>
+      </div>
+      <button onclick="closeToast()" style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 18px; padding: 0; line-height: 1;">×</button>
+    </div>
+  </div>
+  
+  <style>
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes slideIn {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    #toast-notification {
+      animation: slideIn 0.3s ease-out;
+    }
+  </style>
   
   <!-- Footer -->
   <footer style="position:fixed; bottom:0; left:260px; right:0; padding:10px 20px; background:rgba(249,250,251,0.95); border-top:1px solid #e5e7eb; font-size:11px; color:#6b7280; text-align:center; z-index:100; backdrop-filter: blur(8px);">

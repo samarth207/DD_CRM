@@ -475,9 +475,9 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
 router.get('/all-leads', auth, adminAuth, async (req, res) => {
   try {
     const leads = await Lead.find()
-      .populate('assignedTo', 'name email')
-      .populate('assignmentHistory.fromUser', 'name email')
-      .populate('assignmentHistory.toUser', 'name email');
+      .populate('assignedTo', '_id name email')
+      .populate('assignmentHistory.fromUser', '_id name email')
+      .populate('assignmentHistory.toUser', '_id name email');
     
     const stats = {
       total: leads.length,
@@ -893,6 +893,51 @@ router.post('/bulk-update-status', auth, adminAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error updating leads', error: error.message });
+  }
+});
+
+// Bulk transfer leads
+router.post('/bulk-transfer-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, toUserId } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!toUserId) {
+      return res.status(400).json({ message: 'Target user ID is required' });
+    }
+
+    // Verify target user exists
+    const toUser = await User.findById(toUserId);
+    if (!toUser || toUser.role !== 'user') {
+      return res.status(404).json({ message: 'Target user not found' });
+    }
+
+    // Transfer all leads
+    const leads = await Lead.find({ _id: { $in: leadIds } });
+    
+    for (const lead of leads) {
+      const fromUser = lead.assignedTo;
+      lead.assignedTo = toUserId;
+      lead.assignmentHistory.push({
+        action: 'transferred',
+        fromUser: fromUser,
+        toUser: toUserId,
+        changedBy: req.userId,
+        changedAt: new Date()
+      });
+      await lead.save();
+    }
+
+    res.json({ 
+      message: `${leads.length} lead(s) transferred to ${toUser.name} successfully`,
+      transferredCount: leads.length,
+      toUser: { name: toUser.name, email: toUser.email }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error transferring leads', error: error.message });
   }
 });
 
