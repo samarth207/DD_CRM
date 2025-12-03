@@ -62,6 +62,58 @@ function extractField(row, fieldName, defaultValue = '') {
       if (value === null || value === undefined || String(value).trim() === '') {
         return defaultValue;
       }
+      
+      // Special handling for contact/phone numbers to handle scientific notation
+      if (fieldName === 'contact') {
+        // Convert to string and handle scientific notation
+        let contactStr = String(value).trim();
+        
+        // If it's in scientific notation (e.g., 9.17046E+11), convert it properly
+        if (contactStr.includes('E+') || contactStr.includes('e+')) {
+          try {
+            // Parse as number and format without decimals
+            const numValue = parseFloat(value);
+            if (!isNaN(numValue)) {
+              contactStr = numValue.toFixed(0); // Remove decimals
+            }
+          } catch (e) {
+            console.warn('Failed to parse contact number:', value);
+          }
+        }
+        
+        // Remove all non-digit characters (including apostrophes)
+        contactStr = contactStr.replace(/\D/g, '');
+        
+        return contactStr || defaultValue;
+      }
+      
+      // Special handling for status to normalize case variations
+      if (fieldName === 'status') {
+        const statusStr = String(value).trim();
+        // Map common variations to correct enum values
+        const statusMap = {
+          'did not pick': 'Did not pick',
+          'didnotpick': 'Did not pick',
+          'buffer fresh': 'Buffer fresh',
+          'bufferfresh': 'Buffer fresh',
+          'request call back': 'Request call back',
+          'requestcallback': 'Request call back',
+          'follow up': 'Follow up',
+          'followup': 'Follow up',
+          'interested in next batch': 'Interested in next batch',
+          'registration fees paid': 'Registration fees paid',
+          'junk/not interested': 'Junk/not interested',
+          'junk': 'Junk/not interested',
+          'not interested': 'Junk/not interested',
+          'fresh': 'Fresh',
+          'counselled': 'Counselled',
+          'enrolled': 'Enrolled'
+        };
+        
+        const normalized = statusStr.toLowerCase();
+        return statusMap[normalized] || statusStr;
+      }
+      
       return String(value).trim();
     }
   }
@@ -82,28 +134,42 @@ function mapExcelRowToLead(row, options = {}) {
     defaultStatus = 'Fresh'
   } = options;
 
-  // Extract fields with smart mapping and defaults
-  const name = extractField(row, 'name', 'Unknown');
+  // Extract fields with smart mapping
+  const name = extractField(row, 'name', '');
   const contact = extractField(row, 'contact', '');
   const email = extractField(row, 'email', '');
-  const city = extractField(row, 'city', 'N/A');
-  const university = extractField(row, 'university', 'N/A');
-  const course = extractField(row, 'course', 'N/A');
-  const profession = extractField(row, 'profession', 'N/A');
+  const city = extractField(row, 'city', '');
+  const university = extractField(row, 'university', '');
+  const course = extractField(row, 'course', '');
+  const profession = extractField(row, 'profession', '');
   const status = extractField(row, 'status', defaultStatus);
   const notesContent = extractField(row, 'notes', '');
 
-  // Build lead object
+  // Normalize contact (remove non-digits)
+  const normContact = contact ? String(contact).replace(/\D/g, '') : '';
+  
+  // Normalize email
+  const normEmail = email ? email.trim().toLowerCase() : '';
+  
+  // Helper to check if value is meaningful (not empty, not just underscore/dash)
+  const isMeaningful = (val) => {
+    if (!val) return false;
+    const trimmed = String(val).trim();
+    return trimmed && trimmed !== '_' && trimmed !== '-' && trimmed !== 'N/A' && trimmed !== 'n/a';
+  };
+
+  // Build lead object - only include fields with meaningful values (matching manual form behavior)
   const leadData = {
-    name,
-    contact,
-    email,
-    city,
-    university,
-    course,
-    profession,
-    status,
+    name: name || 'Unknown',
+    contact: normContact,
+    email: normEmail || undefined,
+    city: isMeaningful(city) ? city.trim() : undefined,
+    university: isMeaningful(university) ? university.trim() : undefined,
+    course: isMeaningful(course) ? course.trim() : undefined,
+    profession: isMeaningful(profession) ? profession.trim() : undefined,
+    status: status,
     assignedTo: assignedUserId,
+    createdBy: createdBy,
     notes: notesContent ? [{
       content: notesContent,
       createdBy: createdBy

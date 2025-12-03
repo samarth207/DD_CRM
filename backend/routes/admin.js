@@ -283,6 +283,11 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
         defaultStatus: 'Fresh'
       });
 
+      // Log first few leads for debugging
+      if (index < 3) {
+        console.log(`Lead ${index + 1} mapped data:`, JSON.stringify(leadData, null, 2));
+      }
+
       // Normalize email and contact for duplicate checking
       const normEmail = leadData.email ? leadData.email.toLowerCase() : '';
       const normContact = leadData.contact ? String(leadData.contact).replace(/\D/g, '') : '';
@@ -309,15 +314,40 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     // Insert leads in batches to avoid memory issues
     const BATCH_SIZE = 500;
     let insertedCount = 0;
+    const insertErrors = [];
     
     if (newLeads.length > 0) {
+      console.log(`Attempting to insert ${newLeads.length} leads in batches of ${BATCH_SIZE}...`);
+      
       for (let i = 0; i < newLeads.length; i += BATCH_SIZE) {
         const batch = newLeads.slice(i, i + BATCH_SIZE);
-        const leadsToInsert = batch.map(data => new Lead(data));
-        await Lead.insertMany(leadsToInsert, { ordered: false });
-        insertedCount += leadsToInsert.length;
-        console.log(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${leadsToInsert.length} leads (Total: ${insertedCount}/${newLeads.length})`);
+        try {
+          const leadsToInsert = batch.map(data => new Lead(data));
+          const result = await Lead.insertMany(leadsToInsert, { ordered: false });
+          insertedCount += result.length;
+          console.log(`✓ Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${result.length} leads (Total: ${insertedCount}/${newLeads.length})`);
+        } catch (error) {
+          console.error(`✗ Error in batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message);
+          
+          // Handle partial insertion with ordered: false
+          if (error.insertedDocs) {
+            insertedCount += error.insertedDocs.length;
+            console.log(`  ↳ Partial success: ${error.insertedDocs.length} leads inserted despite errors`);
+          }
+          
+          // Log validation errors for debugging
+          if (error.writeErrors) {
+            error.writeErrors.slice(0, 3).forEach((err, idx) => {
+              console.error(`  ↳ Sample error ${idx + 1}:`, err.err.errmsg || err.err.message);
+              insertErrors.push(err.err.errmsg || err.err.message);
+            });
+          } else {
+            insertErrors.push(error.message);
+          }
+        }
       }
+      
+      console.log(`\nFinal insertion summary: ${insertedCount} of ${newLeads.length} leads inserted successfully`);
     }
 
     // Distribution summary
@@ -331,10 +361,12 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       .join(', ');
 
     res.json({
-      message: `Upload complete. ${insertedCount} new leads added. ${duplicates.length} duplicates skipped.`,
+      message: `Upload complete. ${insertedCount} new leads added. ${duplicates.length} duplicates skipped.${insertErrors.length > 0 ? ` ${newLeads.length - insertedCount} failed validation.` : ''}`,
       addedCount: insertedCount,
       skippedDuplicates: duplicates.length,
       duplicateSamples: duplicates.slice(0, 10),
+      failedCount: newLeads.length - insertedCount,
+      errors: insertErrors.length > 0 ? insertErrors.slice(0, 5) : undefined,
       distribution,
       distributionText
     });

@@ -562,10 +562,20 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
       if (data.skippedDuplicates !== undefined) {
         extra = ` | Added: ${data.addedCount} | Duplicates Skipped: ${data.skippedDuplicates}`;
       }
+      if (data.failedCount && data.failedCount > 0) {
+        extra += ` | Failed Validation: ${data.failedCount}`;
+      }
       if (data.distributionText) {
         extra += ` | Distribution: ${data.distributionText}`;
       }
-      showMessage(data.message + extra, 'success');
+      
+      // Show errors if any
+      if (data.errors && data.errors.length > 0) {
+        console.error('Upload validation errors:', data.errors);
+        extra += ` | Check console for error details.`;
+      }
+      
+      showMessage(data.message + extra, data.failedCount > 0 ? 'info' : 'success');
       if (data.distribution && Array.isArray(data.distribution)) {
         renderDistributionGrid(data.distribution);
       }
