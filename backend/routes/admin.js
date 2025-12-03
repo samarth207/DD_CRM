@@ -11,6 +11,16 @@ const { mapExcelRowToLead, getMappingSummary } = require('../utils/excelFieldMap
 
 const router = express.Router();
 
+// Simple in-memory cache for brochures
+let brochuresCache = null;
+let brochuresCacheTime = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function invalidateBrochuresCache() {
+  brochuresCache = null;
+  brochuresCacheTime = null;
+}
+
 // Configure multer for file upload
 const path = require('path');
 const fs = require('fs');
@@ -87,6 +97,7 @@ router.post('/upload-brochure', auth, adminAuth, pdfUpload.single('file'), async
       uploadedBy: req.userId
     });
     await brochure.save();
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure uploaded successfully', brochure });
   } catch (error) {
     res.status(500).json({ message: 'Error uploading brochure', error: error.message });
@@ -158,10 +169,29 @@ router.get('/brochures/download-all', auth, async (req, res) => {
 router.get('/brochures', auth, async (req, res) => {
   try {
     const { university, course } = req.query;
+    
+    // Check cache if no filters applied
+    if (!university && !course) {
+      const now = Date.now();
+      if (brochuresCache && brochuresCacheTime && (now - brochuresCacheTime < CACHE_DURATION)) {
+        return res.json(brochuresCache);
+      }
+    }
+    
     const query = {};
     if (university) query.university = university;
     if (course) query.course = course;
-    const brochures = await Brochure.find(query).populate('uploadedBy', 'name email');
+    const brochures = await Brochure.find(query)
+      .populate('uploadedBy', 'name email')
+      .select('-__v')
+      .lean();
+    
+    // Update cache if no filters
+    if (!university && !course) {
+      brochuresCache = brochures;
+      brochuresCacheTime = Date.now();
+    }
+    
     res.json(brochures);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching brochures', error: error.message });
@@ -181,6 +211,7 @@ router.delete('/brochure/:id', auth, adminAuth, async (req, res) => {
       fs.unlinkSync(filePath);
     }
     await Brochure.findByIdAndDelete(req.params.id);
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting brochure', error: error.message });
@@ -214,6 +245,7 @@ router.put('/brochure/:id', auth, adminAuth, pdfUpload.single('file'), async (re
     if (university) brochure.university = university;
     if (course) brochure.course = course;
     await brochure.save();
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure updated successfully', brochure });
   } catch (error) {
     res.status(500).json({ message: 'Error updating brochure', error: error.message });
@@ -312,7 +344,7 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     });
 
     // Insert leads in batches to avoid memory issues
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 1000; // Increased from 500 for better performance
     let insertedCount = 0;
     const insertErrors = [];
     
@@ -322,24 +354,28 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       for (let i = 0; i < newLeads.length; i += BATCH_SIZE) {
         const batch = newLeads.slice(i, i + BATCH_SIZE);
         try {
-          const leadsToInsert = batch.map(data => new Lead(data));
-          const result = await Lead.insertMany(leadsToInsert, { ordered: false });
-          insertedCount += result.length;
-          console.log(`✓ Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${result.length} leads (Total: ${insertedCount}/${newLeads.length})`);
+          // Use bulkWrite for better performance
+          const bulkOps = batch.map(data => ({
+            insertOne: { document: data }
+          }));
+          
+          const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+          insertedCount += result.insertedCount || batch.length;
+          console.log(`✓ Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${result.insertedCount || batch.length} leads (Total: ${insertedCount}/${newLeads.length})`);
         } catch (error) {
           console.error(`✗ Error in batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message);
           
-          // Handle partial insertion with ordered: false
-          if (error.insertedDocs) {
-            insertedCount += error.insertedDocs.length;
-            console.log(`  ↳ Partial success: ${error.insertedDocs.length} leads inserted despite errors`);
+          // Handle partial insertion
+          if (error.result && error.result.nInserted) {
+            insertedCount += error.result.nInserted;
+            console.log(`  ↳ Partial success: ${error.result.nInserted} leads inserted despite errors`);
           }
           
           // Log validation errors for debugging
           if (error.writeErrors) {
             error.writeErrors.slice(0, 3).forEach((err, idx) => {
-              console.error(`  ↳ Sample error ${idx + 1}:`, err.err.errmsg || err.err.message);
-              insertErrors.push(err.err.errmsg || err.err.message);
+              console.error(`  ↳ Sample error ${idx + 1}:`, err.errmsg || err.message);
+              insertErrors.push(err.errmsg || err.message);
             });
           } else {
             insertErrors.push(error.message);
@@ -379,7 +415,9 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
 // Get all users (for admin)
 router.get('/users', auth, adminAuth, async (req, res) => {
   try {
-    const users = await User.find({ role: 'user' }).select('-password');
+    const users = await User.find({ role: 'user' })
+      .select('-password -__v')
+      .lean();
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -434,14 +472,16 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const leads = await Lead.find({ assignedTo: userId });
+    const leads = await Lead.find({ assignedTo: userId })
+      .select('_id name contact email city university course profession status notes statusHistory lastContactDate createdAt updatedAt')
+      .lean();
 
     const statusCounts = {};
     leads.forEach(lead => {
       statusCounts[lead.status] = (statusCounts[lead.status] || 0) + 1;
     });
 
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId).select('-password -__v').lean();
 
     res.json({
       user,
@@ -475,9 +515,11 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
 router.get('/all-leads', auth, adminAuth, async (req, res) => {
   try {
     const leads = await Lead.find()
+      .select('-__v')
       .populate('assignedTo', '_id name email')
       .populate('assignmentHistory.fromUser', '_id name email')
-      .populate('assignmentHistory.toUser', '_id name email');
+      .populate('assignmentHistory.toUser', '_id name email')
+      .lean();
     
     const stats = {
       total: leads.length,
@@ -503,8 +545,13 @@ router.get('/all-leads', auth, adminAuth, async (req, res) => {
 // Get overall statistics (all users combined)
 router.get('/overall-stats', auth, adminAuth, async (req, res) => {
   try {
-    const leads = await Lead.find().populate('assignedTo', 'name email');
-    const users = await User.find({ role: 'user' }).select('-password');
+    const leads = await Lead.find()
+      .select('status assignedTo')
+      .populate('assignedTo', 'name email')
+      .lean();
+    const users = await User.find({ role: 'user' })
+      .select('-password -__v')
+      .lean();
     
     const statusBreakdown = {};
     const userStats = [];
@@ -737,9 +784,11 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
       ]
     };
     const leads = await Lead.find(query)
+      .select('name contact email city university course profession status assignedTo updatedAt notes')
       .limit(100)
       .sort({ updatedAt: -1 })
-      .populate('assignedTo', 'name email');
+      .populate('assignedTo', 'name email')
+      .lean();
     const results = leads.map(l => ({
       id: l._id,
       name: l.name,
@@ -874,22 +923,34 @@ router.post('/bulk-update-status', auth, adminAuth, async (req, res) => {
       return res.status(400).json({ message: 'Invalid status value' });
     }
 
-    // Update all leads and add status history entry
-    const leads = await Lead.find({ _id: { $in: leadIds } });
+    // Use bulkWrite for much faster batch updates
+    const now = new Date();
+    const statusHistoryEntry = {
+      status,
+      changedBy: req.userId,
+      changedAt: now
+    };
     
-    for (const lead of leads) {
-      lead.status = status;
-      lead.statusHistory.push({
-        status,
-        changedBy: req.userId,
-        changedAt: new Date()
-      });
-      await lead.save();
-    }
-
+    const bulkOps = leadIds.map(leadId => ({
+      updateOne: {
+        filter: { _id: leadId },
+        update: {
+          $set: { 
+            status: status,
+            updatedAt: now
+          },
+          $push: { 
+            statusHistory: statusHistoryEntry 
+          }
+        }
+      }
+    }));
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+    
     res.json({ 
-      message: `${leads.length} lead(s) updated successfully`,
-      updatedCount: leads.length 
+      message: `${result.modifiedCount} lead(s) updated successfully`,
+      updatedCount: result.modifiedCount
     });
   } catch (error) {
     res.status(500).json({ message: 'Error updating leads', error: error.message });
@@ -915,29 +976,142 @@ router.post('/bulk-transfer-leads', auth, adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Target user not found' });
     }
 
-    // Transfer all leads
-    const leads = await Lead.find({ _id: { $in: leadIds } });
+    // Fetch current assignments for history tracking
+    const leads = await Lead.find({ _id: { $in: leadIds } }).select('_id assignedTo').lean();
     
-    for (const lead of leads) {
-      const fromUser = lead.assignedTo;
-      lead.assignedTo = toUserId;
-      lead.assignmentHistory.push({
-        action: 'transferred',
-        fromUser: fromUser,
-        toUser: toUserId,
-        changedBy: req.userId,
-        changedAt: new Date()
-      });
-      await lead.save();
-    }
+    // Use bulkWrite for much faster batch updates
+    const now = new Date();
+    const bulkOps = leads.map(lead => ({
+      updateOne: {
+        filter: { _id: lead._id },
+        update: {
+          $set: { 
+            assignedTo: toUserId,
+            updatedAt: now
+          },
+          $push: { 
+            assignmentHistory: {
+              action: 'transferred',
+              fromUser: lead.assignedTo,
+              toUser: toUserId,
+              changedBy: req.userId,
+              changedAt: now
+            }
+          }
+        }
+      }
+    }));
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
 
     res.json({ 
-      message: `${leads.length} lead(s) transferred to ${toUser.name} successfully`,
-      transferredCount: leads.length,
+      message: `${result.modifiedCount} lead(s) transferred to ${toUser.name} successfully`,
+      transferredCount: result.modifiedCount,
       toUser: { name: toUser.name, email: toUser.email }
     });
   } catch (error) {
     res.status(500).json({ message: 'Error transferring leads', error: error.message });
+  }
+});
+
+// Combined bulk operation: update status AND/OR transfer leads in one transaction
+router.post('/bulk-update-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, status, toUserId } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!status && !toUserId) {
+      return res.status(400).json({ message: 'At least one action (status or transfer) is required' });
+    }
+
+    // Validate status if provided
+    if (status) {
+      const validStatuses = [
+        'Fresh', 'Buffer fresh', 'Did not pick', 'Request call back',
+        'Follow up', 'Counselled', 'Interested in next batch',
+        'Registration fees paid', 'Enrolled', 'Junk/not interested'
+      ];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status value' });
+      }
+    }
+
+    // Verify target user if transfer requested
+    let toUser = null;
+    if (toUserId) {
+      toUser = await User.findById(toUserId);
+      if (!toUser || toUser.role !== 'user') {
+        return res.status(404).json({ message: 'Target user not found' });
+      }
+    }
+
+    // Fetch current data for history tracking (only if needed)
+    const leads = toUserId 
+      ? await Lead.find({ _id: { $in: leadIds } }).select('_id assignedTo').lean()
+      : null;
+    
+    // Build update operations
+    const now = new Date();
+    const bulkOps = leadIds.map((leadId, index) => {
+      const update = {
+        $set: { updatedAt: now }
+      };
+      const push = {};
+
+      // Add status update
+      if (status) {
+        update.$set.status = status;
+        push.statusHistory = {
+          status,
+          changedBy: req.userId,
+          changedAt: now
+        };
+      }
+
+      // Add transfer update
+      if (toUserId && leads) {
+        const lead = leads.find(l => l._id.toString() === leadId.toString());
+        update.$set.assignedTo = toUserId;
+        push.assignmentHistory = {
+          action: 'transferred',
+          fromUser: lead ? lead.assignedTo : null,
+          toUser: toUserId,
+          changedBy: req.userId,
+          changedAt: now
+        };
+      }
+
+      // Add $push only if there are items to push
+      if (Object.keys(push).length > 0) {
+        update.$push = push;
+      }
+
+      return {
+        updateOne: {
+          filter: { _id: leadId },
+          update
+        }
+      };
+    });
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+
+    // Build response message
+    let actions = [];
+    if (status) actions.push(`status to "${status}"`);
+    if (toUserId) actions.push(`assignment to ${toUser.name}`);
+    
+    res.json({ 
+      message: `${result.modifiedCount} lead(s) updated: ${actions.join(' and ')}`,
+      modifiedCount: result.modifiedCount,
+      status: status || null,
+      toUser: toUser ? { name: toUser.name, email: toUser.email } : null
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating leads', error: error.message });
   }
 });
 

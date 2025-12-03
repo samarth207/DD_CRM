@@ -398,11 +398,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadLeads() {
   try {
-    const response = await apiCall('/leads');
+    // Load all leads without pagination for stats (limit set high)
+    const response = await apiCall('/leads?limit=10000');
     const data = await response.json();
     
     if (response.ok) {
-      allLeads = data;
+      allLeads = data.leads || data; // Support both new and old format
       updateStats();
       displayLeads();
     }
@@ -894,15 +895,29 @@ async function addNote() {
   }
 }
 
+// Debounce utility
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 // Event listeners for filters
 document.getElementById('filter-status').addEventListener('change', () => {
   window.currentLeadsPage = 1; // Reset pagination on filter change
   displayLeads();
 });
-document.getElementById('filter-search').addEventListener('input', () => {
+// Debounced search to avoid excessive re-renders
+document.getElementById('filter-search').addEventListener('input', debounce(() => {
   window.currentLeadsPage = 1; // Reset pagination on search
   displayLeads();
-});
+}, 300)); // Wait 300ms after user stops typing
 
 // Close modal when clicking outside
 document.getElementById('lead-modal').addEventListener('click', (e) => {

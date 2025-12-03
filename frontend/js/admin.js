@@ -3053,17 +3053,49 @@ async function performBulkActions() {
     actions.push(`Transfer to <strong>${toUserName}</strong>`);
   }
   
-  const message = `${actions.join(' and ')} for <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #6b7280;">This action will be performed in sequence.</small>`;
+  const message = `${actions.join(' and ')} for <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #6b7280;">This action will be performed as a single optimized operation.</small>`;
   
   showConfirmModal('Confirm Bulk Actions', message, async () => {
     try {
       showLoading('Applying Actions...', 'Please wait while we process your request');
       
       const token = getToken();
-      let successMessages = [];
       
-      // Step 1: Update status if selected
-      if (status) {
+      // Use combined endpoint for better performance (single transaction)
+      if (status && toUserId) {
+        // Both status and transfer - use combined endpoint
+        const response = await fetch(`${API_URL}/admin/bulk-update-leads`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            leadIds: selectedLeadIds,
+            status: status,
+            toUserId: toUserId
+          })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          hideLoading();
+          showToast('Update Failed', data.message || 'Failed to update leads', 'error');
+          return;
+        }
+        
+        hideLoading();
+        await loadAllLeads();
+        
+        document.getElementById('bulk-status-select').value = '';
+        document.getElementById('bulk-transfer-select').value = '';
+        
+        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
+        showToast('Actions Completed', `${data.modifiedCount} lead(s) updated: status to "${status}" and transferred to ${toUserName}. Selection preserved.`, 'success');
+        
+      } else if (status) {
+        // Status only
         const statusResponse = await fetch(`${API_URL}/admin/bulk-update-status`, {
           method: 'POST',
           headers: {
@@ -3084,11 +3116,13 @@ async function performBulkActions() {
           return;
         }
         
-        successMessages.push(`Status updated to "${status}"`);
-      }
-      
-      // Step 2: Transfer leads if user selected
-      if (toUserId) {
+        hideLoading();
+        await loadAllLeads();
+        document.getElementById('bulk-status-select').value = '';
+        showToast('Status Updated', `${statusData.updatedCount} lead(s) updated to "${status}". Selection preserved.`, 'success');
+        
+      } else if (toUserId) {
+        // Transfer only
         const transferResponse = await fetch(`${API_URL}/admin/bulk-transfer-leads`, {
           method: 'POST',
           headers: {
@@ -3109,19 +3143,13 @@ async function performBulkActions() {
           return;
         }
         
+        hideLoading();
+        await loadAllLeads();
+        document.getElementById('bulk-transfer-select').value = '';
+        
         const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-        successMessages.push(`Transferred to ${toUserName}`);
+        showToast('Transfer Completed', `${transferData.transferredCount} lead(s) transferred to ${toUserName}. Selection preserved.`, 'success');
       }
-      
-      // Success - reload and show message
-      hideLoading();
-      await loadAllLeads();
-      
-      // Reset dropdowns but keep selection for additional actions
-      document.getElementById('bulk-status-select').value = '';
-      document.getElementById('bulk-transfer-select').value = '';
-      
-      showToast('Actions Completed', `${successMessages.join(' and ')} for ${selectedLeadIds.length} lead(s). Selection preserved for additional actions.`, 'success');
       
     } catch (error) {
       hideLoading();
@@ -3280,7 +3308,21 @@ function viewLeadDetail(leadId) {
 }
 
 // Setup event listeners for filters
-document.getElementById('all-leads-search').addEventListener('input', renderAllLeads);
+// Debounce utility
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Event listeners for all leads filters with debouncing
+document.getElementById('all-leads-search').addEventListener('input', debounce(renderAllLeads, 300));
 document.getElementById('all-leads-status-filter').addEventListener('change', renderAllLeads);
 document.getElementById('all-leads-user-filter').addEventListener('change', renderAllLeads);
 
