@@ -87,7 +87,7 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Lead not found' });
     }
     
-    const { status, nextCallDateTime } = req.body;
+    const { status, nextCallDateTime, note } = req.body;
     
     // Update status if provided
     if (status && status !== lead.status) {
@@ -100,12 +100,50 @@ router.put('/:id', auth, async (req, res) => {
       lead.status = status;
     }
     
+    // Add note if provided
+    if (note && note.trim()) {
+      lead.notes.push({
+        content: note.trim(),
+        createdBy: req.userId,
+        createdAt: new Date()
+      });
+    }
+    
     // Update next call date/time if provided (can be null to clear)
     if (nextCallDateTime !== undefined) {
       lead.nextCallDateTime = nextCallDateTime ? new Date(nextCallDateTime) : null;
     }
     
     lead.lastContactDate = new Date();
+    await lead.save();
+    res.json(lead);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update specific lead field (university, course)
+router.put('/:id/field', auth, async (req, res) => {
+  try {
+    const lead = await Lead.findOne({ 
+      _id: req.params.id, 
+      assignedTo: req.userId 
+    });
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    
+    const { university, course } = req.body;
+    
+    if (university !== undefined) {
+      lead.university = university;
+    }
+    
+    if (course !== undefined) {
+      lead.course = course;
+    }
+    
     await lead.save();
     res.json(lead);
   } catch (error) {

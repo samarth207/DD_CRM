@@ -617,11 +617,16 @@ async function openLeadModal(lead) {
   document.getElementById('modal-lead-contact').textContent = lead.contact || 'N/A';
   document.getElementById('modal-lead-email').textContent = lead.email || 'N/A';
   document.getElementById('modal-lead-city').textContent = lead.city || 'N/A';
-  document.getElementById('modal-lead-university').textContent = lead.university || 'N/A';
-  document.getElementById('modal-lead-course').textContent = lead.course || 'N/A';
+  document.getElementById('modal-lead-university').value = lead.university || '';
+  document.getElementById('modal-lead-course').value = lead.course || '';
   document.getElementById('modal-lead-profession').textContent = lead.profession || 'N/A';
   document.getElementById('modal-lead-source').textContent = lead.source || 'Other';
-  document.getElementById('modal-lead-status').value = lead.status;
+  
+  // Set status dropdown to empty (keep current)
+  document.getElementById('modal-lead-status').value = '';
+  
+  // Clear quick update fields
+  document.getElementById('quick-update-note').value = '';
 
   // Load all available brochures (not just for this lead's course/university)
   const brochureDiv = document.getElementById('modal-lead-brochure');
@@ -727,8 +732,7 @@ async function openLeadModal(lead) {
     whatsappDiv.innerHTML = '<span style="color:#e11d48;">No contact number available for WhatsApp.</span>';
   }
 
-  displayStatusHistory(lead.statusHistory || []);
-  displayNotes(lead.notes);
+  displayTimeline(lead);
   
   // Display next call date if exists
   displayFollowUpSchedule(lead.nextCallDateTime);
@@ -760,7 +764,8 @@ function displayFollowUpSchedule(nextCallDateTime) {
 
 function closeModal() {
   document.getElementById('lead-modal').style.display = 'none';
-  document.getElementById('new-note').value = '';
+  document.getElementById('quick-update-note').value = '';
+  document.getElementById('modal-lead-status').value = '';
   currentLead = null;
 }
 
@@ -802,6 +807,72 @@ function clearFilters() {
   document.getElementById('filter-status').value = '';
   document.getElementById('filter-search').value = '';
   displayLeads();
+}
+
+// Display unified timeline combining status changes and notes
+function displayTimeline(lead) {
+  const container = document.getElementById('timeline-container');
+  container.innerHTML = '';
+  
+  const timeline = [];
+  
+  // Add status history
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    lead.statusHistory.forEach(entry => {
+      timeline.push({
+        type: 'status',
+        content: entry.status,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt
+      });
+    });
+  }
+  
+  // Add notes
+  if (lead.notes && lead.notes.length > 0) {
+    lead.notes.forEach(note => {
+      timeline.push({
+        type: 'note',
+        content: note.content,
+        date: new Date(note.createdAt),
+        dateStr: note.createdAt
+      });
+    });
+  }
+  
+  if (timeline.length === 0) {
+    container.innerHTML = '<p style="text-align: center; color: #999;">No activity yet</p>';
+    return;
+  }
+  
+  // Sort by date (newest first)
+  timeline.sort((a, b) => b.date - a.date);
+  
+  timeline.forEach(entry => {
+    const item = document.createElement('div');
+    item.className = 'note-item';
+    
+    if (entry.type === 'status') {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+          <strong>Status changed to:</strong> 
+          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; gap: 8px;">
+          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+          <span>${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    }
+    
+    container.appendChild(item);
+  });
 }
 
 function displayStatusHistory(history) {
@@ -848,6 +919,89 @@ function displayNotes(notes) {
     `;
     container.appendChild(noteItem);
   });
+}
+
+async function quickUpdateLead() {
+  if (!currentLead) return;
+  
+  const newStatus = document.getElementById('modal-lead-status').value;
+  const noteContent = document.getElementById('quick-update-note').value.trim();
+  const dateTimeValue = document.getElementById('modal-followup-datetime').value;
+  
+  // Validate that at least one field is being updated
+  if (!newStatus && !noteContent && !dateTimeValue) {
+    showToast('No Changes', 'Please update at least one field (status, note, or schedule)', 'warning');
+    return;
+  }
+  
+  // Validate future date if provided
+  if (dateTimeValue) {
+    const followUpDate = new Date(dateTimeValue);
+    const now = new Date();
+    if (followUpDate <= now) {
+      showToast('Invalid Date', 'Follow-up time must be in the future', 'warning');
+      return;
+    }
+  }
+  
+  try {
+    showLoading('Updating Lead...', 'Please wait');
+    
+    const updateData = {};
+    if (newStatus) updateData.status = newStatus;
+    if (noteContent) updateData.note = noteContent;
+    if (dateTimeValue) {
+      updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+    }
+    
+    const response = await apiCall(`/leads/${currentLead._id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Update local data
+      const index = allLeads.findIndex(l => l._id === currentLead._id);
+      if (index !== -1) {
+        allLeads[index] = data;
+      }
+      
+      currentLead = data;
+      
+      // Update display
+      updateStats();
+      displayLeads();
+      displayTimeline(data);
+      displayFollowUpSchedule(data.nextCallDateTime);
+      
+      // Clear form fields
+      document.getElementById('modal-lead-status').value = '';
+      document.getElementById('quick-update-note').value = '';
+      
+      hideLoading();
+      
+      const updates = [];
+      if (newStatus) updates.push('status');
+      if (noteContent) updates.push('note');
+      if (dateTimeValue) updates.push('schedule');
+      
+      showToast('Success', `Lead updated successfully! (${updates.join(', ')})`, 'success');
+      
+      // Start checking for this reminder if scheduled
+      if (dateTimeValue) {
+        checkReminders();
+      }
+    } else {
+      hideLoading();
+      showToast('Error', data.message || 'Failed to update lead', 'error');
+    }
+  } catch (error) {
+    hideLoading();
+    console.error('Error updating lead:', error);
+    showToast('Error', 'Failed to update lead', 'error');
+  }
 }
 
 async function updateLeadStatus() {
@@ -918,6 +1072,72 @@ async function addNote() {
   } catch (error) {
     console.error('Error adding note:', error);
     showMessage('Failed to add note', 'error');
+  }
+}
+
+// Copy lead details to clipboard
+function copyLeadDetails() {
+  if (!currentLead) return;
+  
+  const details = `Name: ${currentLead.name || ''}
+Contact: ${currentLead.contact || ''}
+Email: ${currentLead.email || ''}
+University: ${currentLead.university || ''}
+Course: ${currentLead.course || ''}`;
+  
+  navigator.clipboard.writeText(details).then(() => {
+    showToast('Copied!', 'Lead details copied to clipboard', 'success');
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showToast('Error', 'Failed to copy to clipboard', 'error');
+  });
+}
+
+// Update lead field (university or course)
+async function updateLeadField(field) {
+  if (!currentLead) return;
+  
+  const value = document.getElementById(`modal-lead-${field}`).value.trim();
+  
+  if (!value) {
+    showToast('Error', `Please enter a ${field}`, 'error');
+    return;
+  }
+  
+  try {
+    showLoading('Updating...', 'Please wait');
+    
+    const updateData = {};
+    updateData[field] = value;
+    
+    const response = await apiCall(`/leads/${currentLead._id}/field`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Update local data
+      const index = allLeads.findIndex(l => l._id === currentLead._id);
+      if (index !== -1) {
+        allLeads[index] = data;
+      }
+      
+      currentLead = data;
+      updateStats();
+      displayLeads();
+      
+      hideLoading();
+      showToast('Success', `${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`, 'success');
+    } else {
+      hideLoading();
+      showToast('Error', data.message || 'Failed to update', 'error');
+    }
+  } catch (error) {
+    hideLoading();
+    console.error('Error updating field:', error);
+    showToast('Error', 'Failed to update', 'error');
   }
 }
 

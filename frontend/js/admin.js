@@ -1002,6 +1002,19 @@ function createUserLeadsChart(userStats) {
             }
           }
         }
+      },
+      onClick: async (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const userId = userStats[idx].userId;
+        const userName = userStats[idx].userName;
+        if (!userId) return;
+        // Navigate to User Progress section and show this user's details
+        showSection('progress');
+        const selectElement = document.getElementById('progress-user-select');
+        selectElement.value = userId;
+        // Trigger the change event to load user progress
+        selectElement.dispatchEvent(new Event('change'));
       }
     }
   });
@@ -1093,25 +1106,28 @@ async function openLeadModal(leadId) {
     document.getElementById('admin-modal-lead-contact').textContent = data.contact || 'N/A';
     document.getElementById('admin-modal-lead-email').textContent = data.email || 'N/A';
     document.getElementById('admin-modal-lead-city').textContent = data.city || 'N/A';
-    document.getElementById('admin-modal-lead-university').textContent = data.university || 'N/A';
-    document.getElementById('admin-modal-lead-course').textContent = data.course || 'N/A';
+    document.getElementById('admin-modal-lead-university').value = data.university || '';
+    document.getElementById('admin-modal-lead-course').value = data.course || '';
     document.getElementById('admin-modal-lead-profession').textContent = data.profession || 'N/A';
     document.getElementById('admin-modal-lead-source').textContent = data.source || 'Other';
     document.getElementById('admin-modal-lead-status').textContent = data.status;
 
-    // Status history
-    const historyContainer = document.getElementById('admin-status-history');
-    historyContainer.innerHTML = '';
-    if (!data.statusHistory || data.statusHistory.length === 0) {
-      historyContainer.innerHTML = '<p style="color:#999;">No status changes yet</p>';
-    } else {
-      data.statusHistory.sort((a,b)=> new Date(b.changedAt) - new Date(a.changedAt)).forEach(entry => {
-        const div = document.createElement('div');
-        div.className = 'note-item';
-        div.innerHTML = `<div class="note-content"><strong>${entry.status}</strong></div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>`;
-        historyContainer.appendChild(div);
-      });
+    // Clear quick update fields
+    document.getElementById('admin-quick-status').value = '';
+    document.getElementById('admin-quick-note').value = '';
+    document.getElementById('admin-quick-datetime').value = '';
+    
+    // Display next call date if exists
+    if (data.nextCallDateTime) {
+      const date = new Date(data.nextCallDateTime);
+      const localDateTime = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      document.getElementById('admin-quick-datetime').value = localDateTime;
     }
+
+    // Display unified timeline
+    displayAdminTimeline(data);
 
     // Assignment history
     const assignContainer = document.getElementById('admin-assignment-history');
@@ -1132,23 +1148,149 @@ async function openLeadModal(leadId) {
       }
     }
 
-    // Notes
-    const notesContainer = document.getElementById('admin-lead-notes');
-    notesContainer.innerHTML = '';
-    if (!data.notes || data.notes.length === 0) {
-      notesContainer.innerHTML = '<p style="color:#999;">No notes</p>';
-    } else {
-      data.notes.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).forEach(note => {
-        const n = document.createElement('div');
-        n.className = 'note-item';
-        n.innerHTML = `<div class="note-content">${note.content}</div><div class="note-date">${new Date(note.createdAt).toLocaleString()}</div>`;
-        notesContainer.appendChild(n);
-      });
-    }
-
     document.getElementById('admin-lead-modal').style.display = 'flex';
   } catch (err) {
     console.error('Error loading lead detail', err);
+  }
+}
+
+function displayAdminTimeline(data) {
+  const container = document.getElementById('admin-timeline-container');
+  container.innerHTML = '';
+  
+  const timeline = [];
+  
+  // Add status history
+  if (data.statusHistory && data.statusHistory.length > 0) {
+    data.statusHistory.forEach(entry => {
+      timeline.push({
+        type: 'status',
+        content: entry.status,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt
+      });
+    });
+  }
+  
+  // Add notes
+  if (data.notes && data.notes.length > 0) {
+    data.notes.forEach(note => {
+      timeline.push({
+        type: 'note',
+        content: note.content,
+        date: new Date(note.createdAt),
+        dateStr: note.createdAt
+      });
+    });
+  }
+  
+  if (timeline.length === 0) {
+    container.innerHTML = '<p style="text-align: center; color: #999;">No activity yet</p>';
+    return;
+  }
+  
+  // Sort by date (newest first)
+  timeline.sort((a, b) => b.date - a.date);
+  
+  timeline.forEach(entry => {
+    const item = document.createElement('div');
+    item.className = 'note-item';
+    
+    if (entry.type === 'status') {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+          <strong>Status changed to:</strong> 
+          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; gap: 8px;">
+          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+          <span>${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    }
+    
+    container.appendChild(item);
+  });
+}
+
+async function quickUpdateAdminLead() {
+  if (!currentLeadId) return;
+  
+  const newStatus = document.getElementById('admin-quick-status').value;
+  const noteContent = document.getElementById('admin-quick-note').value.trim();
+  const dateTimeValue = document.getElementById('admin-quick-datetime').value;
+  
+  // Validate that at least one field is being updated
+  if (!newStatus && !noteContent && !dateTimeValue) {
+    showTransferMessage('Please update at least one field (status, note, or schedule)', 'error');
+    return;
+  }
+  
+  // Validate future date if provided
+  if (dateTimeValue) {
+    const followUpDate = new Date(dateTimeValue);
+    const now = new Date();
+    if (followUpDate <= now) {
+      showTransferMessage('Follow-up time must be in the future', 'error');
+      return;
+    }
+  }
+  
+  try {
+    const updateData = {};
+    if (newStatus) updateData.status = newStatus;
+    if (noteContent) updateData.note = noteContent;
+    if (dateTimeValue) {
+      updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+    }
+    
+    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Clear form fields
+      document.getElementById('admin-quick-status').value = '';
+      document.getElementById('admin-quick-note').value = '';
+      
+      const updates = [];
+      if (newStatus) updates.push('status');
+      if (noteContent) updates.push('note');
+      if (dateTimeValue) updates.push('schedule');
+      
+      showTransferMessage(`Lead updated successfully! (${updates.join(', ')})`, 'success');
+      
+      // Refresh the lead modal
+      await openLeadModal(currentLeadId);
+      
+      // Refresh the user progress view if open
+      const selectedUser = document.getElementById('progress-user-select').value;
+      if (selectedUser) {
+        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
+        const progData = await resp.json();
+        if (resp.ok) displayUserProgress(progData);
+      }
+      
+      // Refresh all leads view if open
+      const allLeadsCard = document.getElementById('all-leads-card');
+      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
+        await loadAllLeads();
+      }
+    } else {
+      showTransferMessage(data.message || 'Failed to update lead', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating lead:', error);
+    showTransferMessage('Failed to update lead', 'error');
   }
 }
 
@@ -1198,6 +1340,84 @@ async function confirmDeleteLead() {
 function cancelDeleteLead() {
   const transferMsg = document.getElementById('transfer-message');
   transferMsg.style.display = 'none';
+}
+
+// Copy lead details to clipboard (Admin)
+function copyAdminLeadDetails() {
+  if (!currentLeadId) return;
+  
+  const name = document.getElementById('admin-modal-lead-name').textContent;
+  const contact = document.getElementById('admin-modal-lead-contact').textContent;
+  const email = document.getElementById('admin-modal-lead-email').textContent;
+  const university = document.getElementById('admin-modal-lead-university').value;
+  const course = document.getElementById('admin-modal-lead-course').value;
+  
+  const details = `Name: ${name}
+Contact: ${contact}
+Email: ${email}
+University: ${university}
+Course: ${course}`;
+  
+  navigator.clipboard.writeText(details).then(() => {
+    showTransferMessage('Lead details copied to clipboard', 'success');
+    setTimeout(() => {
+      const transferMsg = document.getElementById('transfer-message');
+      transferMsg.style.display = 'none';
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showTransferMessage('Failed to copy to clipboard', 'error');
+  });
+}
+
+// Update lead field (university or course) - Admin
+async function updateAdminLeadField(field) {
+  if (!currentLeadId) return;
+  
+  const value = document.getElementById(`admin-modal-lead-${field}`).value.trim();
+  
+  if (!value) {
+    showTransferMessage(`Please enter a ${field}`, 'error');
+    return;
+  }
+  
+  try {
+    const updateData = {};
+    updateData[field] = value;
+    
+    const response = await apiCall(`/admin/lead/${currentLeadId}/field`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      showTransferMessage(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`, 'success');
+      
+      // Refresh the lead modal
+      await openLeadModal(currentLeadId);
+      
+      // Refresh the user progress view if open
+      const selectedUser = document.getElementById('progress-user-select').value;
+      if (selectedUser) {
+        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
+        const progData = await resp.json();
+        if (resp.ok) displayUserProgress(progData);
+      }
+      
+      // Refresh all leads view if open
+      const allLeadsCard = document.getElementById('all-leads-card');
+      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
+        await loadAllLeads();
+      }
+    } else {
+      showTransferMessage(data.message || 'Failed to update', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating field:', error);
+    showTransferMessage('Failed to update', 'error');
+  }
 }
 
 function renderUsersTable() {

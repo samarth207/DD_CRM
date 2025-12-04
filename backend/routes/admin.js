@@ -611,8 +611,129 @@ router.get('/lead/:id', auth, adminAuth, async (req, res) => {
       assignmentHistory: lead.assignmentHistory,
       assignedTo: lead.assignedTo,
       lastContactDate: lead.lastContactDate,
+      nextCallDateTime: lead.nextCallDateTime,
       createdAt: lead.createdAt,
       updatedAt: lead.updatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update lead from admin (status, note, nextCallDateTime)
+router.put('/lead/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    
+    const { status, note, nextCallDateTime } = req.body;
+    
+    // Update status if provided
+    if (status && status !== lead.status) {
+      lead.statusHistory = lead.statusHistory || [];
+      lead.statusHistory.push({
+        status,
+        changedAt: new Date(),
+        changedBy: req.userId
+      });
+      lead.status = status;
+    }
+    
+    // Add note if provided
+    if (note && note.trim()) {
+      lead.notes.push({
+        content: note.trim(),
+        createdBy: req.userId,
+        createdAt: new Date()
+      });
+    }
+    
+    // Update next call date/time if provided (can be null to clear)
+    if (nextCallDateTime !== undefined) {
+      lead.nextCallDateTime = nextCallDateTime ? new Date(nextCallDateTime) : null;
+    }
+    
+    lead.lastContactDate = new Date();
+    await lead.save();
+    
+    // Return populated lead for display
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('assignedTo', 'name email')
+      .populate('assignmentHistory.fromUser', 'name email')
+      .populate('assignmentHistory.toUser', 'name email')
+      .populate('assignmentHistory.changedBy', 'name email');
+    
+    res.json({
+      id: updatedLead._id,
+      name: updatedLead.name,
+      contact: updatedLead.contact,
+      email: updatedLead.email,
+      city: updatedLead.city,
+      university: updatedLead.university,
+      course: updatedLead.course,
+      profession: updatedLead.profession,
+      status: updatedLead.status,
+      notes: updatedLead.notes,
+      statusHistory: updatedLead.statusHistory,
+      assignmentHistory: updatedLead.assignmentHistory,
+      assignedTo: updatedLead.assignedTo,
+      lastContactDate: updatedLead.lastContactDate,
+      nextCallDateTime: updatedLead.nextCallDateTime,
+      createdAt: updatedLead.createdAt,
+      updatedAt: updatedLead.updatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update specific lead field (university, course) - Admin
+router.put('/lead/:id/field', auth, adminAuth, async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead not found' });
+    }
+    
+    const { university, course } = req.body;
+    
+    if (university !== undefined) {
+      lead.university = university;
+    }
+    
+    if (course !== undefined) {
+      lead.course = course;
+    }
+    
+    await lead.save();
+    
+    // Return populated lead for display
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('assignedTo', 'name email')
+      .populate('assignmentHistory.fromUser', 'name email')
+      .populate('assignmentHistory.toUser', 'name email')
+      .populate('assignmentHistory.changedBy', 'name email');
+    
+    res.json({
+      id: updatedLead._id,
+      name: updatedLead.name,
+      contact: updatedLead.contact,
+      email: updatedLead.email,
+      city: updatedLead.city,
+      university: updatedLead.university,
+      course: updatedLead.course,
+      profession: updatedLead.profession,
+      status: updatedLead.status,
+      notes: updatedLead.notes,
+      statusHistory: updatedLead.statusHistory,
+      assignmentHistory: updatedLead.assignmentHistory,
+      assignedTo: updatedLead.assignedTo,
+      lastContactDate: updatedLead.lastContactDate,
+      nextCallDateTime: updatedLead.nextCallDateTime,
+      createdAt: updatedLead.createdAt,
+      updatedAt: updatedLead.updatedAt
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
