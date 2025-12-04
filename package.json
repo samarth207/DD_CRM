@@ -8,7 +8,6 @@
     "dev": "nodemon backend/server.js",
     "client": "cd frontend && npm start",
     "install-all": "npm install && cd frontend && npm install",
-    "backfill:assignments": "node backend/scripts/backfillAssignmentHistory.js",
     "generate:leads": "node backend/scripts/generateSampleExcel.js"
   },
   "keywords": [
