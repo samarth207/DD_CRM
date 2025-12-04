@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
+    "test": "cross-env NODE_ENV=test node backend/server.js",
+    "test:dev": "cross-env NODE_ENV=test nodemon backend/server.js",
     "client": "cd frontend && npm start",
     "install-all": "npm install && cd frontend && npm install",
     "generate:leads": "node backend/scripts/generateSampleExcel.js"
@@ -30,6 +32,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "nodemon": "^3.1.11"
   }
 }

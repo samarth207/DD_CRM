@@ -308,9 +308,9 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     const duplicates = [];
 
     data.forEach((row, index) => {
-      // Use smart field mapper to extract lead data
+      // Use smart field mapper to extract lead data WITHOUT user assignment yet
       const leadData = mapExcelRowToLead(row, {
-        assignedUserId: userIds[index % userIds.length],
+        assignedUserId: null, // Will be assigned after deduplication
         createdBy: req.userId,
         defaultStatus: 'Fresh'
       });
@@ -341,6 +341,11 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       if (contactKey) existingMap.set(contactKey, true);
 
       newLeads.push(leadData);
+    });
+
+    // NOW assign users to new leads in round-robin fashion
+    newLeads.forEach((lead, index) => {
+      lead.assignedTo = userIds[index % userIds.length];
     });
 
     // Insert leads in batches to avoid memory issues

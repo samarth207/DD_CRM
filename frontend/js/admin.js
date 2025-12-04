@@ -607,6 +607,8 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
       if (data.distribution && Array.isArray(data.distribution)) {
         renderDistributionGrid(data.distribution);
       }
+      // Refresh entire dashboard to show new leads in charts and stats
+      await refreshDashboard();
       // Do not reset selected users to allow repeated uploads
       fileInput.value = '';
     } else {
@@ -796,6 +798,37 @@ function showCreateUserMessage(message, type) {
   setTimeout(() => {
     messageDiv.style.display = 'none';
   }, 5000);
+}
+
+// Helper function to refresh all dashboard data dynamically
+async function refreshDashboard() {
+  try {
+    // Reload overall stats and charts
+    await loadOverallStats();
+    
+    // Refresh user progress if a user is selected
+    const selectedUser = document.getElementById('progress-user-select').value;
+    if (selectedUser) {
+      const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
+      const progData = await resp.json();
+      if (resp.ok) displayUserProgress(progData);
+    }
+    
+    // Refresh global search results if visible
+    const searchInput = document.getElementById('global-lead-search');
+    if (searchInput) {
+      const q = searchInput.value.trim();
+      if (q) await performGlobalSearch(q);
+    }
+    
+    // Refresh all leads if that section is visible
+    const allLeadsTable = document.getElementById('all-leads-tbody');
+    if (allLeadsTable && allLeadsTable.children.length > 0) {
+      await loadAllLeads();
+    }
+  } catch (error) {
+    console.error('Error refreshing dashboard:', error);
+  }
 }
 
 async function loadOverallStats() {
@@ -1578,19 +1611,8 @@ async function quickUpdateAdminLead() {
       // Refresh the lead modal
       await openLeadModal(currentLeadId);
       
-      // Refresh the user progress view if open
-      const selectedUser = document.getElementById('progress-user-select').value;
-      if (selectedUser) {
-        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
-        const progData = await resp.json();
-        if (resp.ok) displayUserProgress(progData);
-      }
-      
-      // Refresh all leads view if open
-      const allLeadsCard = document.getElementById('all-leads-card');
-      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
-        await loadAllLeads();
-      }
+      // Refresh entire dashboard dynamically
+      await refreshDashboard();
     } else {
       showTransferMessage(data.message || 'Failed to update lead', 'error');
     }
@@ -1624,16 +1646,8 @@ async function confirmDeleteLead() {
     if (response.ok) {
       showTransferMessage('Lead deleted successfully', 'success');
       closeAdminLeadModal();
-      // Refresh user progress table if viewing a user
-      const selectedUser = document.getElementById('progress-user-select').value;
-      if (selectedUser) {
-        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
-        const progData = await resp.json();
-        if (resp.ok) displayUserProgress(progData);
-      }
-      // Also refresh global search results if visible
-      const q = document.getElementById('global-lead-search')?.value.trim();
-      if (q) performGlobalSearch(q);
+      // Refresh entire dashboard dynamically
+      await refreshDashboard();
     } else {
       showTransferMessage(data.message || 'Delete failed', 'error');
     }
@@ -1704,19 +1718,8 @@ async function updateAdminLeadField(field) {
       // Refresh the lead modal
       await openLeadModal(currentLeadId);
       
-      // Refresh the user progress view if open
-      const selectedUser = document.getElementById('progress-user-select').value;
-      if (selectedUser) {
-        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
-        const progData = await resp.json();
-        if (resp.ok) displayUserProgress(progData);
-      }
-      
-      // Refresh all leads view if open
-      const allLeadsCard = document.getElementById('all-leads-card');
-      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
-        await loadAllLeads();
-      }
+      // Refresh entire dashboard dynamically
+      await refreshDashboard();
     } else {
       showTransferMessage(data.message || 'Failed to update', 'error');
     }
@@ -1819,6 +1822,8 @@ async function confirmDeleteUser(userId) {
       // Refresh users list
       await loadUsers();
       renderUsersTable();
+      // Refresh entire dashboard to update statistics and charts
+      await refreshDashboard();
       setTimeout(()=> msgDiv.style.display='none',4000);
     } else {
       msgDiv.innerHTML = `<span style="color: #dc2626;">${data.message || 'Delete failed'}</span>`;
@@ -1975,12 +1980,8 @@ async function transferLead() {
       showTransferMessage('Lead transferred successfully', 'success');
       // Refresh modal content to reflect updated assignment history
       await openLeadModal(currentLeadId);
-      const selectedUser = document.getElementById('progress-user-select').value;
-      if (selectedUser) {
-        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
-        const progData = await resp.json();
-        if (resp.ok) displayUserProgress(progData);
-      }
+      // Refresh entire dashboard dynamically
+      await refreshDashboard();
     } else {
       showTransferMessage(data.message || 'Transfer failed', 'error');
     }
@@ -2960,7 +2961,9 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
     if (response.ok) {
       showCreateLeadMessage(data.message || 'Lead created successfully', 'success');
       document.getElementById('create-lead-form').reset();
-      loadAllLeads(); // Refresh the leads list
+      await loadAllLeads(); // Refresh the leads list
+      // Refresh entire dashboard to show new lead in charts and stats
+      await refreshDashboard();
       setTimeout(() => closeCreateLeadModal(), 1500);
     } else {
       showCreateLeadMessage(data.message || 'Failed to create lead', 'error');
@@ -3603,6 +3606,8 @@ async function performBulkActions() {
         
         hideLoading();
         await loadAllLeads();
+        // Refresh entire dashboard to update charts and stats
+        await refreshDashboard();
         
         document.getElementById('bulk-status-select').value = '';
         document.getElementById('bulk-transfer-select').value = '';
@@ -3634,6 +3639,8 @@ async function performBulkActions() {
         
         hideLoading();
         await loadAllLeads();
+        // Refresh entire dashboard to update charts and stats
+        await refreshDashboard();
         document.getElementById('bulk-status-select').value = '';
         showToast('Status Updated', `${statusData.updatedCount} lead(s) updated to "${status}". Selection preserved.`, 'success');
         
@@ -3661,6 +3668,8 @@ async function performBulkActions() {
         
         hideLoading();
         await loadAllLeads();
+        // Refresh entire dashboard to update charts and stats
+        await refreshDashboard();
         document.getElementById('bulk-transfer-select').value = '';
         
         const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
@@ -3711,7 +3720,9 @@ async function bulkUpdateStatus() {
       if (response.ok) {
         showToast('Success', data.message || 'Leads updated successfully. Selection preserved for additional actions.', 'success');
         // Don't clear selection - allows chaining operations (e.g., update status then transfer)
-        loadAllLeads();
+        await loadAllLeads();
+        // Refresh entire dashboard dynamically
+        await refreshDashboard();
         document.getElementById('bulk-status-select').value = '';
       } else {
         showToast('Update Failed', data.message || 'Failed to update leads', 'error');
@@ -3761,7 +3772,9 @@ async function bulkTransferLeads() {
       if (response.ok) {
         showToast('Success', data.message || 'Leads transferred successfully. Selection preserved for additional actions.', 'success');
         // Don't clear selection - allows chaining operations
-        loadAllLeads();
+        await loadAllLeads();
+        // Refresh entire dashboard dynamically
+        await refreshDashboard();
         document.getElementById('bulk-transfer-select').value = '';
       } else {
         showToast('Transfer Failed', data.message || 'Failed to transfer leads', 'error');
@@ -3806,7 +3819,9 @@ async function bulkDeleteLeads() {
       if (response.ok) {
         showToast('Leads Deleted', data.message || `${selectedLeadIds.length} lead(s) deleted successfully`, 'success');
         clearSelection();
-        loadAllLeads();
+        await loadAllLeads();
+        // Refresh entire dashboard dynamically
+        await refreshDashboard();
       } else {
         showToast('Deletion Failed', data.message || 'Failed to delete leads', 'error');
       }
