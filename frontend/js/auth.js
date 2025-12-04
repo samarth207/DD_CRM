@@ -5,8 +5,14 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   const password = document.getElementById('password').value;
   const errorMessage = document.getElementById('error-message');
   
+  // Debug logging
+  console.log('Current hostname:', window.location.hostname);
+  console.log('API_URL:', API_URL);
+  console.log('Login endpoint:', `${API_URL}/auth/login`);
+  console.log('Request payload:', { email, password: '***' });
+  
   try {
-    const response = await fetch('http://localhost:5000/api/auth/login', {
+    const response = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -15,6 +21,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     });
     
     const data = await response.json();
+    
+    console.log('Response status:', response.status);
+    console.log('Response data:', data);
     
     if (response.ok) {
       // Store token and user info
@@ -28,10 +37,12 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         window.location.href = 'user.html';
       }
     } else {
+      console.error('Login failed:', data);
       errorMessage.textContent = data.message || 'Login failed';
       errorMessage.style.display = 'block';
     }
   } catch (error) {
+    console.error('Login error:', error);
     errorMessage.textContent = 'An error occurred. Please try again.';
     errorMessage.style.display = 'block';
     console.error('Login error:', error);

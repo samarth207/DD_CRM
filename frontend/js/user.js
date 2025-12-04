@@ -1,3 +1,77 @@
+// ===== MODAL AND NOTIFICATION HELPERS =====
+// Show loading overlay
+function showLoading(message = 'Processing...', submessage = 'Please wait') {
+  document.getElementById('loading-message').textContent = message;
+  document.getElementById('loading-submessage').textContent = submessage;
+  document.getElementById('loading-overlay').style.display = 'block';
+}
+
+// Hide loading overlay
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+// Show confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').innerHTML = message;
+  document.getElementById('confirmation-modal').style.display = 'block';
+  
+  const confirmBtn = document.getElementById('confirm-action-btn');
+  confirmBtn.onclick = () => {
+    closeConfirmModal();
+    onConfirm();
+  };
+}
+
+// Close confirmation modal
+function closeConfirmModal() {
+  document.getElementById('confirmation-modal').style.display = 'none';
+}
+
+// Show toast notification
+function showToast(title, message, type = 'success') {
+  const toast = document.getElementById('toast-notification');
+  const icon = document.getElementById('toast-icon');
+  const toastTitle = document.getElementById('toast-title');
+  const toastMessage = document.getElementById('toast-message');
+  
+  // Set colors and icons based on type
+  if (type === 'success') {
+    toast.style.borderLeftColor = '#10b981';
+    icon.className = 'fas fa-check-circle';
+    icon.style.color = '#10b981';
+    toastTitle.textContent = title || 'Success';
+  } else if (type === 'error') {
+    toast.style.borderLeftColor = '#ef4444';
+    icon.className = 'fas fa-exclamation-circle';
+    icon.style.color = '#ef4444';
+    toastTitle.textContent = title || 'Error';
+  } else if (type === 'warning') {
+    toast.style.borderLeftColor = '#f59e0b';
+    icon.className = 'fas fa-exclamation-triangle';
+    icon.style.color = '#f59e0b';
+    toastTitle.textContent = title || 'Warning';
+  } else if (type === 'info') {
+    toast.style.borderLeftColor = '#3b82f6';
+    icon.className = 'fas fa-info-circle';
+    icon.style.color = '#3b82f6';
+    toastTitle.textContent = title || 'Info';
+  }
+  
+  toastMessage.textContent = message;
+  toast.style.display = 'block';
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => closeToast(), 5000);
+}
+
+// Close toast
+function closeToast() {
+  document.getElementById('toast-notification').style.display = 'none';
+}
+
+// ===== BROCHURES =====
 // Load brochures on dashboard
 let allBrochures = [];
 document.addEventListener('DOMContentLoaded', loadBrochures);
@@ -113,7 +187,7 @@ function displayBrochures(brochures) {
             ${brochure.course}
           </span>
           <div style="display:flex; gap:8px;">
-            <a href="http://localhost:5000/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-eye"></i> View</a>
+            <a href="${BASE_URL}/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-eye"></i> View</a>
             <button onclick="downloadBrochure('${brochure.filePath}', '${brochure.university}-${brochure.course}-brochure.pdf')" class="btn btn-primary" style="font-size:12px; padding:6px 12px;"><i class="fas fa-download"></i> Download</button>
           </div>
         `;
@@ -145,7 +219,7 @@ function toggleUniversityBrochures(univId) {
 }
 
 function downloadBrochure(filePath, fileName) {
-  fetch(`http://localhost:5000/${filePath}`)
+  fetch(`${BASE_URL}/${filePath}`)
     .then(response => response.blob())
     .then(blob => {
       const url = window.URL.createObjectURL(blob);
@@ -159,7 +233,7 @@ function downloadBrochure(filePath, fileName) {
     })
     .catch(error => {
       console.error('Error downloading brochure:', error);
-      alert('Error downloading brochure');
+      showToast('Download Failed', 'Error downloading brochure', 'error');
     });
 }
 
@@ -167,7 +241,7 @@ async function downloadAllBrochures() {
   try {
     const token = getToken();
     if (!token) {
-      alert('Please login to download brochures');
+      showToast('Login Required', 'Please login to download brochures', 'warning');
       return;
     }
 
@@ -207,10 +281,10 @@ async function downloadAllBrochures() {
     button.innerHTML = originalHTML;
     
     // Show success message
-    alert('All brochures downloaded successfully!');
+    showToast('Download Complete', 'All brochures downloaded successfully!', 'success');
   } catch (error) {
     console.error('Error downloading all brochures:', error);
-    alert('Error downloading brochures: ' + error.message);
+    showToast('Download Failed', 'Error downloading brochures: ' + error.message, 'error');
     
     // Reset button in case of error
     const button = event.target.closest('button');
@@ -219,24 +293,26 @@ async function downloadAllBrochures() {
   }
 }
 
-function downloadBulkBrochures() {
+async function downloadBulkBrochures() {
   const univFilter = document.getElementById('filter-university').value;
   if (!univFilter) {
-    alert('Please select a university to download all its brochures.');
+    showToast('Selection Required', 'Please select a university to download all its brochures.', 'warning');
     return;
   }
   
   const filtered = allBrochures.filter(b => b.university === univFilter);
   if (filtered.length === 0) {
-    alert('No brochures found for this university.');
+    showToast('No Brochures', 'No brochures found for this university.', 'warning');
     return;
   }
   
-  // Download each brochure
+  showLoading('Downloading Brochures', `Preparing ${filtered.length} brochure(s) for ${univFilter}...`);
+  
+  // Download each brochure with staggered timing
   filtered.forEach((brochure, index) => {
     setTimeout(() => {
       const link = document.createElement('a');
-      link.href = `http://localhost:5000/${brochure.filePath}`;
+      link.href = `${BASE_URL}/${brochure.filePath}`;
       link.download = '';
       document.body.appendChild(link);
       link.click();
@@ -244,7 +320,10 @@ function downloadBulkBrochures() {
     }, index * 500); // Stagger downloads by 500ms
   });
   
-  alert(`Downloading ${filtered.length} brochure(s) for ${univFilter}...`);
+  // Hide loading after downloads start
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  hideLoading();
+  showToast('Download Started', `Downloading ${filtered.length} brochure(s)...`, 'info');
 }
 
 // Check authentication
@@ -319,13 +398,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadLeads() {
   try {
-    const response = await apiCall('/leads');
+    // Load all leads without pagination for stats (limit set high)
+    const response = await apiCall('/leads?limit=10000');
     const data = await response.json();
     
     if (response.ok) {
-      allLeads = data;
+      allLeads = data.leads || data; // Support both new and old format
       updateStats();
       displayLeads();
+      // Start reminder system after leads are loaded
+      startReminderSystem();
     }
   } catch (error) {
     console.error('Error loading leads:', error);
@@ -430,7 +512,8 @@ function displayLeads() {
       (lead.city && lead.city.toLowerCase().includes(filterSearch)) ||
       (lead.university && lead.university.toLowerCase().includes(filterSearch)) ||
       (lead.course && lead.course.toLowerCase().includes(filterSearch)) ||
-      (lead.profession && lead.profession.toLowerCase().includes(filterSearch));
+      (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
+      (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
     return matchesStatus && matchesSearch;
   });
@@ -480,6 +563,7 @@ function displayLeads() {
         <div><strong>University:</strong> ${lead.university || 'N/A'}</div>
         <div><strong>Course:</strong> ${lead.course || 'N/A'}</div>
         <div><strong>Profession:</strong> ${lead.profession || 'N/A'}</div>
+        <div><strong>Source:</strong> ${lead.source || 'Other'}</div>
       </div>
     `;
     
@@ -536,33 +620,93 @@ async function openLeadModal(lead) {
   document.getElementById('modal-lead-university').textContent = lead.university || 'N/A';
   document.getElementById('modal-lead-course').textContent = lead.course || 'N/A';
   document.getElementById('modal-lead-profession').textContent = lead.profession || 'N/A';
+  document.getElementById('modal-lead-source').textContent = lead.source || 'Other';
   document.getElementById('modal-lead-status').value = lead.status;
 
-  // Fetch brochure for this university/course
+  // Load all available brochures (not just for this lead's course/university)
   const brochureDiv = document.getElementById('modal-lead-brochure');
-  brochureDiv.innerHTML = '<span style="color:#9ca3af;">Checking for brochure...</span>';
-  let brochureUrl = null;
+  brochureDiv.innerHTML = '<span style="color:#9ca3af;">Loading brochures...</span>';
+  
   try {
     const token = getToken();
-    const response = await fetch(`${API_URL}/admin/brochures?university=${encodeURIComponent(lead.university)}&course=${encodeURIComponent(lead.course)}`, {
+    const response = await fetch(`${API_URL}/admin/brochures`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    const brochures = await response.json();
-    if (Array.isArray(brochures) && brochures.length > 0) {
-      const b = brochures[0];
-      brochureUrl = `http://localhost:5000/${b.filePath}`;
-      brochureDiv.innerHTML = `
-        <div style="display:flex; gap:8px;">
-          <a href="${brochureUrl}" target="_blank" class="btn btn-secondary"><i class="fas fa-eye"></i> View Brochure</a>
-          <button onclick="downloadBrochure('${b.filePath}', '${lead.university}-${lead.course}-brochure.pdf')" class="btn btn-primary"><i class="fas fa-download"></i> Download Brochure</button>
+    const allBrochures = await response.json();
+    
+    if (Array.isArray(allBrochures) && allBrochures.length > 0) {
+      // Build brochure interface with filters
+      let brochureHtml = `
+        <div style="background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; overflow:hidden;">
+          <div 
+            onclick="toggleBrochureSection()" 
+            style="padding:12px 14px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; background:linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); transition:all 0.2s ease; user-select:none;"
+            onmouseover="this.style.background='linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)'"
+            onmouseout="this.style.background='linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)'">
+            <h4 style="margin:0; color:#1e293b; font-size:14px; display:flex; align-items:center; gap:8px; font-weight:600;">
+              <i class="fas fa-book-open" style="color:#6366f1;"></i>
+              Available Brochures for Download
+              <span style="background:#6366f1; color:white; font-size:11px; padding:2px 6px; border-radius:10px; font-weight:600;">${allBrochures.length}</span>
+            </h4>
+            <i id="brochure-toggle-icon" class="fas fa-chevron-down" style="color:#6366f1; font-size:14px; transition:transform 0.3s ease;"></i>
+          </div>
+          
+          <div id="brochure-collapse-content" style="max-height:0; overflow:hidden; transition:max-height 0.4s ease, padding 0.4s ease; padding:0 12px;">
+            <div style="padding-bottom:12px;">
+              <div style="margin-bottom:8px; margin-top:12px;">
+                <input 
+                  type="text" 
+                  id="modal-brochure-search" 
+                  placeholder="🔍 Search university or course..." 
+                  oninput="filterModalBrochures()"
+                  style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
+              </div>
+              
+              <div style="margin-bottom:12px; display:flex; gap:8px;">
+                <select id="modal-brochure-filter-univ" onchange="filterModalBrochures()" size="1" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white; cursor:pointer;">
+                  <option value="">All Universities</option>
+                </select>
+                <select id="modal-brochure-filter-course" onchange="filterModalBrochures()" size="1" style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white; cursor:pointer;">
+                  <option value="">All Courses</option>
+                </select>
+              </div>
+              
+              <div id="modal-brochure-list" style="max-height:300px; overflow-y:auto; background:white; border:1px solid #e2e8f0; border-radius:6px; padding:8px;">
+                <!-- Brochures will be populated here -->
+              </div>
+            </div>
+          </div>
         </div>
       `;
+      brochureDiv.innerHTML = brochureHtml;
+      
+      // Store brochures globally for filtering
+      window.modalBrochures = allBrochures;
+      
+      // Populate filter dropdowns
+      const universities = [...new Set(allBrochures.map(b => b.university))].sort();
+      const courses = [...new Set(allBrochures.map(b => b.course))].sort();
+      
+      const univSelect = document.getElementById('modal-brochure-filter-univ');
+      universities.forEach(u => {
+        univSelect.innerHTML += `<option value="${u}">${u}</option>`;
+      });
+      
+      const courseSelect = document.getElementById('modal-brochure-filter-course');
+      courses.forEach(c => {
+        courseSelect.innerHTML += `<option value="${c}">${c}</option>`;
+      });
+      
+      // Display all brochures initially
+      displayModalBrochures(allBrochures);
+      
     } else {
-      brochureDiv.innerHTML = '<span style="color:#e11d48;">No brochure available for this course/university.</span>';
+      brochureDiv.innerHTML = '<span style="color:#e11d48;">No brochures available in the system.</span>';
     }
   } catch (error) {
-    brochureDiv.innerHTML = '<span style="color:#e11d48;">Error loading brochure.</span>';
+    brochureDiv.innerHTML = '<span style="color:#e11d48;">Error loading brochures.</span>';
+    console.error('Error loading brochures:', error);
   }
 
   // WhatsApp message button
@@ -573,15 +717,12 @@ async function openLeadModal(lead) {
     const userName = userData.name || 'DD CRM Team';
     
     const message = encodeURIComponent(
-      `Hello ${lead.name},\n\nThank you for your interest in ${lead.course} at ${lead.university}. Below you can find the brochure for your reference.\n\nIf you have any questions, feel free to reply here.\n\nBest regards,\n${userName}`
+      `Hello ${lead.name},\n\nThank you for your interest in our courses. I've attached course brochures for your reference.\n\nIf you have any questions, feel free to reply here.\n\nBest regards,\n${userName}`
     );
     const phone = lead.contact.replace(/\D/g, '');
     // Use whatsapp:// protocol for desktop app integration
     let waUrl = `whatsapp://send?phone=${phone}&text=${message}`;
     whatsappDiv.innerHTML = `<a href="${waUrl}" class="btn btn-success" style="text-decoration:none;"><i class="fab fa-whatsapp"></i> Send WhatsApp Message</a>`;
-    if (!brochureUrl) {
-      whatsappDiv.innerHTML += `<div style='color:#e11d48; font-size:12px; margin-top:4px;'>Brochure not available for this course/university.</div>`;
-    }
   } else {
     whatsappDiv.innerHTML = '<span style="color:#e11d48;">No contact number available for WhatsApp.</span>';
   }
@@ -780,15 +921,29 @@ async function addNote() {
   }
 }
 
+// Debounce utility
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 // Event listeners for filters
 document.getElementById('filter-status').addEventListener('change', () => {
   window.currentLeadsPage = 1; // Reset pagination on filter change
   displayLeads();
 });
-document.getElementById('filter-search').addEventListener('input', () => {
+// Debounced search to avoid excessive re-renders
+document.getElementById('filter-search').addEventListener('input', debounce(() => {
   window.currentLeadsPage = 1; // Reset pagination on search
   displayLeads();
-});
+}, 300)); // Wait 300ms after user stops typing
 
 // Close modal when clicking outside
 document.getElementById('lead-modal').addEventListener('click', (e) => {
@@ -918,17 +1073,15 @@ function applyUserStatusCustomDateFilter() {
   const startDate = document.getElementById('user-status-start-date').value;
   const endDate = document.getElementById('user-status-end-date').value;
   
-  if (!startDate || !endDate) {
-    alert('Please select both start and end dates');
-    return;
-  }
-  
-  if (new Date(startDate) > new Date(endDate)) {
-    alert('Start date must be before end date');
-    return;
-  }
-  
-  const dateRange = getDateRange('custom', startDate, endDate);
+    if (!startDate || !endDate) {
+      showToast('Date Required', 'Please select both start and end dates', 'warning');
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
+      return;
+    }  const dateRange = getDateRange('custom', startDate, endDate);
   const filteredLeads = filterLeadsByDateRange(allLeads, dateRange);
   
   const statusBreakdown = {};
@@ -1006,7 +1159,7 @@ async function scheduleFollowUp() {
   const dateTimeValue = dateTimeInput.value;
   
   if (!dateTimeValue) {
-    alert('Please select a date and time for the follow-up');
+    showToast('Date Required', 'Please select a date and time for the follow-up', 'warning');
     return;
   }
   
@@ -1014,7 +1167,7 @@ async function scheduleFollowUp() {
   const now = new Date();
   
   if (followUpDate <= now) {
-    alert('Follow-up time must be in the future');
+    showToast('Invalid Date', 'Follow-up time must be in the future', 'warning');
     return;
   }
   
@@ -1080,7 +1233,40 @@ let shownReminders = new Set(); // Track shown reminders to avoid duplicates
 let snoozedReminders = new Map(); // Track snoozed reminders
 let activeReminders = []; // Store all active reminders for notification panel
 
+// Load shown reminders from localStorage on page load
+function loadShownReminders() {
+  try {
+    const stored = localStorage.getItem('shownReminders');
+    if (stored) {
+      const data = JSON.parse(stored);
+      // Only keep reminders from last 24 hours
+      const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+      shownReminders = new Set(
+        data.filter(item => {
+          const timestamp = parseInt(item.split('|')[1]);
+          return timestamp > oneDayAgo;
+        })
+      );
+    }
+  } catch (error) {
+    console.error('Error loading shown reminders:', error);
+    shownReminders = new Set();
+  }
+}
+
+// Save shown reminders to localStorage
+function saveShownReminders() {
+  try {
+    localStorage.setItem('shownReminders', JSON.stringify(Array.from(shownReminders)));
+  } catch (error) {
+    console.error('Error saving shown reminders:', error);
+  }
+}
+
 function startReminderSystem() {
+  // Load previously shown reminders
+  loadShownReminders();
+  
   // Check every 30 seconds
   if (reminderCheckInterval) {
     clearInterval(reminderCheckInterval);
@@ -1105,13 +1291,17 @@ function checkReminders() {
     
     const followUpTime = new Date(lead.nextCallDateTime);
     const timeDiff = followUpTime - now;
-    const leadKey = lead._id + '-' + lead.nextCallDateTime;
+    const leadKey = lead._id + '-' + lead.nextCallDateTime + '|' + Date.now();
+    const baseKey = lead._id + '-' + lead.nextCallDateTime;
     
     // Check if snoozed
     const snoozeTime = snoozedReminders.get(lead._id);
     if (snoozeTime && now < snoozeTime) {
       return; // Still snoozed
     }
+    
+    // Check if already shown (look for any key starting with baseKey)
+    const alreadyShown = Array.from(shownReminders).some(key => key.startsWith(baseKey));
     
     // Add to active reminders if within 5 minutes of follow-up time
     if (timeDiff > 0 && timeDiff <= 300000) {
@@ -1122,9 +1312,10 @@ function checkReminders() {
       });
       
       // Show popup for first-time reminder
-      if (!shownReminders.has(leadKey)) {
+      if (!alreadyShown) {
         showReminderPopup(lead);
         shownReminders.add(leadKey);
+        saveShownReminders();
       }
     }
     
@@ -1137,9 +1328,10 @@ function checkReminders() {
       });
       
       // Show popup for first-time overdue reminder
-      if (!shownReminders.has(leadKey)) {
+      if (!alreadyShown) {
         showReminderPopup(lead, true);
         shownReminders.add(leadKey);
+        saveShownReminders();
       }
     }
   });
@@ -1187,11 +1379,14 @@ function closeReminderPopup() {
 function openLeadFromReminder() {
   if (!currentReminderLead) return;
   
+  // Save lead reference before closing popup (which clears currentReminderLead)
+  const leadId = currentReminderLead._id;
+  
   closeReminderPopup();
   
   // Fetch fresh lead data to ensure we have the latest
   const token = getToken();
-  fetch(`${API_URL}/leads/${currentReminderLead._id}`, {
+  fetch(`${API_URL}/leads/${leadId}`, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -1207,7 +1402,7 @@ function openLeadFromReminder() {
   })
   .catch(error => {
     console.error('Error loading lead:', error);
-    showMessage('Error loading lead details', 'error');
+    showToast('Error', 'Failed to load lead details', 'error');
   });
 }
 
@@ -1219,11 +1414,17 @@ function snoozeReminder() {
   snoozedReminders.set(currentReminderLead._id, snoozeUntil);
   
   // Remove from shown reminders so it can appear again after snooze
-  const leadKey = currentReminderLead._id + '-' + currentReminderLead.nextCallDateTime;
-  shownReminders.delete(leadKey);
+  const baseKey = currentReminderLead._id + '-' + currentReminderLead.nextCallDateTime;
+  // Remove all keys that start with baseKey
+  Array.from(shownReminders).forEach(key => {
+    if (key.startsWith(baseKey)) {
+      shownReminders.delete(key);
+    }
+  });
+  saveShownReminders();
   
   closeReminderPopup();
-  showMessage('Reminder snoozed for 15 minutes', 'success');
+  showToast('Snoozed', 'Reminder snoozed for 15 minutes', 'info');
 }
 
 // Notification Panel Functions
@@ -1249,7 +1450,7 @@ function updateNotificationPanel() {
   // Update badge
   if (activeReminders.length > 0) {
     badge.textContent = activeReminders.length;
-    badge.style.display = 'inline-block';
+    badge.style.display = 'flex';
   } else {
     badge.style.display = 'none';
   }
@@ -1315,10 +1516,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Start reminder system when page loads
-document.addEventListener('DOMContentLoaded', () => {
-  startReminderSystem();
-});
+// Reminder system now starts automatically after leads are loaded in loadLeads()
 
 // Stop reminder system when page unloads
 window.addEventListener('beforeunload', () => {
@@ -1327,3 +1525,149 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
+// Function to display brochures in modal
+function displayModalBrochures(brochures) {
+  const listDiv = document.getElementById('modal-brochure-list');
+  if (!listDiv) return;
+  
+  if (brochures.length === 0) {
+    listDiv.innerHTML = '<p style="color:#9ca3af; text-align:center; padding:12px; font-size:13px;">No brochures match your selection.</p>';
+    return;
+  }
+  
+  // Group by university
+  const grouped = {};
+  brochures.forEach(b => {
+    if (!grouped[b.university]) grouped[b.university] = [];
+    grouped[b.university].push(b);
+  });
+  
+  listDiv.innerHTML = '';
+  
+  Object.keys(grouped).sort().forEach((univ, univIndex) => {
+    const univSection = document.createElement('div');
+    univSection.style.cssText = 'margin-bottom:8px; border:1px solid #e5e7eb; border-radius:6px; overflow:hidden;';
+    
+    const univHeader = document.createElement('div');
+    univHeader.style.cssText = 'font-weight:600; color:#1e293b; font-size:13px; padding:10px 12px; background:linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; transition:all 0.2s ease;';
+    univHeader.onclick = () => toggleUniversitySection(univIndex);
+    univHeader.onmouseenter = (e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%)'; };
+    univHeader.onmouseleave = (e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)'; };
+    
+    const courseCount = grouped[univ].length;
+    univHeader.innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px;">
+        <i class="fas fa-university" style="color:#6366f1; font-size:11px;"></i>
+        ${univ}
+        <span style="background:#6366f1; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">${courseCount}</span>
+      </div>
+      <i id="univ-toggle-${univIndex}" class="fas fa-chevron-down" style="color:#6366f1; font-size:12px; transition:transform 0.3s ease;"></i>
+    `;
+    univSection.appendChild(univHeader);
+    
+    const coursesContainer = document.createElement('div');
+    coursesContainer.id = `univ-courses-${univIndex}`;
+    coursesContainer.style.cssText = 'max-height:0; overflow:hidden; transition:max-height 0.4s ease, padding 0.4s ease; background:#ffffff;';
+    
+    const coursesInner = document.createElement('div');
+    coursesInner.style.cssText = 'padding:8px;';
+    
+    grouped[univ].forEach(brochure => {
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:6px; background:#fafafa; transition:all 0.2s;';
+      item.onmouseenter = (e) => { e.currentTarget.style.background = '#f0f9ff'; e.currentTarget.style.borderColor = '#bfdbfe'; };
+      item.onmouseleave = (e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#e2e8f0'; };
+      
+      item.innerHTML = `
+        <span style="font-size:13px; color:#374151; display:flex; align-items:center; gap:6px;">
+          <i class="fas fa-book" style="color:#6366f1; font-size:11px;"></i>
+          ${brochure.course}
+        </span>
+        <div style="display:flex; gap:6px;">
+          <a href="${BASE_URL}/${brochure.filePath}" target="_blank" class="btn btn-secondary" style="font-size:11px; padding:4px 10px;"><i class="fas fa-eye"></i> View</a>
+          <button onclick="downloadBrochure('${brochure.filePath}', '${brochure.university}-${brochure.course}-brochure.pdf')" class="btn btn-primary" style="font-size:11px; padding:4px 10px;"><i class="fas fa-download"></i> Download</button>
+        </div>
+      `;
+      
+      coursesInner.appendChild(item);
+    });
+    
+    coursesContainer.appendChild(coursesInner);
+    univSection.appendChild(coursesContainer);
+    listDiv.appendChild(univSection);
+  });
+}
+
+// Toggle university section in brochures
+function toggleUniversitySection(univIndex) {
+  const content = document.getElementById(`univ-courses-${univIndex}`);
+  const icon = document.getElementById(`univ-toggle-${univIndex}`);
+  
+  if (!content || !icon) return;
+  
+  const isCollapsed = content.style.maxHeight === '0px' || content.style.maxHeight === '';
+  
+  if (isCollapsed) {
+    // Expand - calculate actual content height
+    content.style.maxHeight = content.scrollHeight + 'px';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    // Collapse
+    content.style.maxHeight = '0';
+    icon.style.transform = 'rotate(0deg)';
+  }
+}
+
+// Function to filter brochures in modal
+function filterModalBrochures() {
+  if (!window.modalBrochures) return;
+  
+  const searchInput = document.getElementById('modal-brochure-search');
+  const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+  const univFilter = document.getElementById('modal-brochure-filter-univ').value;
+  const courseFilter = document.getElementById('modal-brochure-filter-course').value;
+  
+  let filtered = window.modalBrochures;
+  
+  // Apply search filter first
+  if (searchTerm) {
+    filtered = filtered.filter(b => 
+      (b.university || '').toLowerCase().includes(searchTerm) || 
+      (b.course || '').toLowerCase().includes(searchTerm)
+    );
+  }
+  
+  if (univFilter) {
+    filtered = filtered.filter(b => b.university === univFilter);
+  }
+  
+  if (courseFilter) {
+    filtered = filtered.filter(b => b.course === courseFilter);
+  }
+  
+  displayModalBrochures(filtered);
+}
+
+// Toggle brochure section collapse
+function toggleBrochureSection() {
+  const content = document.getElementById('brochure-collapse-content');
+  const icon = document.getElementById('brochure-toggle-icon');
+  
+  if (!content || !icon) return;
+  
+  const isCollapsed = content.style.maxHeight === '0px' || content.style.maxHeight === '';
+  
+  if (isCollapsed) {
+    // Expand
+    content.style.maxHeight = '450px';
+    content.style.paddingTop = '0';
+    content.style.paddingBottom = '0';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    // Collapse
+    content.style.maxHeight = '0';
+    content.style.paddingTop = '0';
+    content.style.paddingBottom = '0';
+    icon.style.transform = 'rotate(0deg)';
+  }
+}

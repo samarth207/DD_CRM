@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
+const compression = require('compression');
 const connectDB = require('./config/db');
 
 // Load environment variables
@@ -15,9 +16,10 @@ const app = express();
 connectDB();
 
 // Middleware
+app.use(compression()); // Enable gzip compression
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -26,15 +28,24 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Serve static files from uploads directory
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, {
+  maxAge: '1d', // Cache for 1 day
+  etag: true,
+  lastModified: true
+}));
 
 // Serve static frontend files
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
+app.use(express.static(path.join(__dirname, '..', 'frontend'), {
+  maxAge: '1h', // Cache for 1 hour
+  etag: true,
+  lastModified: true
+}));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/leads', require('./routes/leads'));
+app.use('/api/calls', require('./routes/calls'));
 
 // Health check
 app.get('/api/health', (req, res) => {

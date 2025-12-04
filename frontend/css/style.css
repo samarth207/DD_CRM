@@ -301,6 +301,13 @@ body {
   background: #e5e7eb;
 }
 
+.btn-secondary:disabled,
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .btn-success {
   background: #10b981;
   color: white;
@@ -812,6 +819,12 @@ body {
   border: 1px solid #bbf7d0;
 }
 
+.message.info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
 .message.error {
   background: #fef2f2;
   color: #991b1b;
@@ -1286,3 +1299,26 @@ body {
   overflow: hidden;
 }
 
+/* Modal Brochure Filters */
+#modal-brochure-filter-univ,
+#modal-brochure-filter-course {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+}
+
+/* Limit dropdown height on browsers that support it */
+#modal-brochure-filter-univ option,
+#modal-brochure-filter-course option {
+  padding: 4px 8px;
+}
+
+#modal-brochure-search {
+  transition: border-color 0.2s ease;
+}
+
+#modal-brochure-search:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}

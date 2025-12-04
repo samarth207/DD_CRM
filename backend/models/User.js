@@ -25,4 +25,8 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+// Indexes for performance optimization
+userSchema.index({ email: 1 }, { unique: true }); // Unique index for email lookups
+userSchema.index({ role: 1 }); // For filtering users by role
+
 module.exports = mongoose.model('User', userSchema);

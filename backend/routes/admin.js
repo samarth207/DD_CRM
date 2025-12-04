@@ -7,8 +7,19 @@ const Lead = require('../models/Lead');
 const User = require('../models/User');
 const Brochure = require('../models/Brochure');
 const { auth, adminAuth } = require('../middleware/auth');
+const { mapExcelRowToLead, getMappingSummary } = require('../utils/excelFieldMapper');
 
 const router = express.Router();
+
+// Simple in-memory cache for brochures
+let brochuresCache = null;
+let brochuresCacheTime = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function invalidateBrochuresCache() {
+  brochuresCache = null;
+  brochuresCacheTime = null;
+}
 
 // Configure multer for file upload
 const path = require('path');
@@ -25,6 +36,9 @@ const storage = multer.diskStorage({
 // Multer for Excel (leads) and PDF (brochure)
 const excelUpload = multer({
   storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit for Excel files
+  },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
         file.mimetype === 'application/vnd.ms-excel') {
@@ -37,6 +51,9 @@ const excelUpload = multer({
 
 const pdfUpload = multer({
   storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit for PDF files
+  },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -80,6 +97,7 @@ router.post('/upload-brochure', auth, adminAuth, pdfUpload.single('file'), async
       uploadedBy: req.userId
     });
     await brochure.save();
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure uploaded successfully', brochure });
   } catch (error) {
     res.status(500).json({ message: 'Error uploading brochure', error: error.message });
@@ -151,10 +169,29 @@ router.get('/brochures/download-all', auth, async (req, res) => {
 router.get('/brochures', auth, async (req, res) => {
   try {
     const { university, course } = req.query;
+    
+    // Check cache if no filters applied
+    if (!university && !course) {
+      const now = Date.now();
+      if (brochuresCache && brochuresCacheTime && (now - brochuresCacheTime < CACHE_DURATION)) {
+        return res.json(brochuresCache);
+      }
+    }
+    
     const query = {};
     if (university) query.university = university;
     if (course) query.course = course;
-    const brochures = await Brochure.find(query).populate('uploadedBy', 'name email');
+    const brochures = await Brochure.find(query)
+      .populate('uploadedBy', 'name email')
+      .select('-__v')
+      .lean();
+    
+    // Update cache if no filters
+    if (!university && !course) {
+      brochuresCache = brochures;
+      brochuresCacheTime = Date.now();
+    }
+    
     res.json(brochures);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching brochures', error: error.message });
@@ -174,6 +211,7 @@ router.delete('/brochure/:id', auth, adminAuth, async (req, res) => {
       fs.unlinkSync(filePath);
     }
     await Brochure.findByIdAndDelete(req.params.id);
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting brochure', error: error.message });
@@ -207,6 +245,7 @@ router.put('/brochure/:id', auth, adminAuth, pdfUpload.single('file'), async (re
     if (university) brochure.university = university;
     if (course) brochure.course = course;
     await brochure.save();
+    invalidateBrochuresCache();
     res.json({ message: 'Brochure updated successfully', brochure });
   } catch (error) {
     res.status(500).json({ message: 'Error updating brochure', error: error.message });
@@ -251,6 +290,10 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
 
+    // Get mapping summary for logging
+    const mappingSummary = getMappingSummary(data);
+    console.log('Excel Field Mapping Summary:', mappingSummary);
+
     // Preload existing leads keyed by normalized email or contact
     const allExistingLeads = await Lead.find({}, 'email contact');
     const existingMap = new Map();
@@ -265,10 +308,21 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
     const duplicates = [];
 
     data.forEach((row, index) => {
-      const rawEmail = row.Email || row.email || '';
-      const rawContact = row.Contact || row.contact || '';
-      const normEmail = rawEmail.trim().toLowerCase();
-      const normContact = typeof rawContact === 'string' ? rawContact.replace(/\D/g, '') : String(rawContact || '').replace(/\D/g, '');
+      // Use smart field mapper to extract lead data
+      const leadData = mapExcelRowToLead(row, {
+        assignedUserId: userIds[index % userIds.length],
+        createdBy: req.userId,
+        defaultStatus: 'Fresh'
+      });
+
+      // Log first few leads for debugging
+      if (index < 3) {
+        console.log(`Lead ${index + 1} mapped data:`, JSON.stringify(leadData, null, 2));
+      }
+
+      // Normalize email and contact for duplicate checking
+      const normEmail = leadData.email ? leadData.email.toLowerCase() : '';
+      const normContact = leadData.contact ? String(leadData.contact).replace(/\D/g, '') : '';
 
       const emailKey = normEmail ? `E:${normEmail}` : null;
       const contactKey = normContact ? `C:${normContact}` : null;
@@ -286,45 +340,56 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       if (emailKey) existingMap.set(emailKey, true);
       if (contactKey) existingMap.set(contactKey, true);
 
-      const assignedUserId = userIds[index % userIds.length];
-
-      newLeads.push(new Lead({
-        name: row.Name || row.name || 'Unknown',
-        contact: rawContact,
-        email: rawEmail,
-        city: row.City || row.city || '',
-        university: row.University || row.university || '',
-        course: row.Course || row.course || '',
-        profession: row.Profession || row.profession || row.Profassion || row.profassion || '',
-        status: row.Status || row.status || 'Fresh',
-        assignedTo: assignedUserId,
-        notes: (row.Notes || row.notes) ? [{
-          content: row.Notes || row.notes,
-          createdBy: req.userId
-        }] : [],
-        statusHistory: [{
-          status: row.Status || row.status || 'Fresh',
-          changedBy: req.userId,
-          changedAt: new Date()
-        }],
-        assignmentHistory: [{
-          action: 'assigned',
-          fromUser: null,
-          toUser: assignedUserId,
-          changedBy: req.userId,
-          changedAt: new Date()
-        }]
-      }));
+      newLeads.push(leadData);
     });
 
-    if (newLeads.length) {
-      await Lead.insertMany(newLeads);
+    // Insert leads in batches to avoid memory issues
+    const BATCH_SIZE = 1000; // Increased from 500 for better performance
+    let insertedCount = 0;
+    const insertErrors = [];
+    
+    if (newLeads.length > 0) {
+      console.log(`Attempting to insert ${newLeads.length} leads in batches of ${BATCH_SIZE}...`);
+      
+      for (let i = 0; i < newLeads.length; i += BATCH_SIZE) {
+        const batch = newLeads.slice(i, i + BATCH_SIZE);
+        try {
+          // Use bulkWrite for better performance
+          const bulkOps = batch.map(data => ({
+            insertOne: { document: data }
+          }));
+          
+          const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+          insertedCount += result.insertedCount || batch.length;
+          console.log(`✓ Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${result.insertedCount || batch.length} leads (Total: ${insertedCount}/${newLeads.length})`);
+        } catch (error) {
+          console.error(`✗ Error in batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message);
+          
+          // Handle partial insertion
+          if (error.result && error.result.nInserted) {
+            insertedCount += error.result.nInserted;
+            console.log(`  ↳ Partial success: ${error.result.nInserted} leads inserted despite errors`);
+          }
+          
+          // Log validation errors for debugging
+          if (error.writeErrors) {
+            error.writeErrors.slice(0, 3).forEach((err, idx) => {
+              console.error(`  ↳ Sample error ${idx + 1}:`, err.errmsg || err.message);
+              insertErrors.push(err.errmsg || err.message);
+            });
+          } else {
+            insertErrors.push(error.message);
+          }
+        }
+      }
+      
+      console.log(`\nFinal insertion summary: ${insertedCount} of ${newLeads.length} leads inserted successfully`);
     }
 
     // Distribution summary
     const distribution = {};
-    newLeads.forEach(lead => {
-      const user = users.find(u => u._id.toString() === lead.assignedTo.toString());
+    newLeads.forEach(leadData => {
+      const user = users.find(u => u._id.toString() === leadData.assignedTo.toString());
       if (user) distribution[user.name] = (distribution[user.name] || 0) + 1;
     });
     const distributionText = Object.entries(distribution)
@@ -332,22 +397,27 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
       .join(', ');
 
     res.json({
-      message: `Upload complete. ${newLeads.length} new leads added. ${duplicates.length} duplicates skipped.`,
-      addedCount: newLeads.length,
+      message: `Upload complete. ${insertedCount} new leads added. ${duplicates.length} duplicates skipped.${insertErrors.length > 0 ? ` ${newLeads.length - insertedCount} failed validation.` : ''}`,
+      addedCount: insertedCount,
       skippedDuplicates: duplicates.length,
       duplicateSamples: duplicates.slice(0, 10),
+      failedCount: newLeads.length - insertedCount,
+      errors: insertErrors.length > 0 ? insertErrors.slice(0, 5) : undefined,
       distribution,
       distributionText
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error uploading leads', error: error.message });
+    console.error('Upload leads error:', error);
+    res.status(500).json({ message: 'Error uploading leads', error: error.message, stack: process.env.NODE_ENV === 'development' ? error.stack : undefined });
   }
 });
 
 // Get all users (for admin)
 router.get('/users', auth, adminAuth, async (req, res) => {
   try {
-    const users = await User.find({ role: 'user' }).select('-password');
+    const users = await User.find({ role: 'user' })
+      .select('-password -__v')
+      .lean();
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -402,14 +472,16 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const leads = await Lead.find({ assignedTo: userId });
+    const leads = await Lead.find({ assignedTo: userId })
+      .select('_id name contact email city university course profession status notes statusHistory lastContactDate createdAt updatedAt')
+      .lean();
 
     const statusCounts = {};
     leads.forEach(lead => {
       statusCounts[lead.status] = (statusCounts[lead.status] || 0) + 1;
     });
 
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId).select('-password -__v').lean();
 
     res.json({
       user,
@@ -442,7 +514,12 @@ router.get('/user-progress/:userId', auth, adminAuth, async (req, res) => {
 // Get all leads with statistics
 router.get('/all-leads', auth, adminAuth, async (req, res) => {
   try {
-    const leads = await Lead.find().populate('assignedTo', 'name email');
+    const leads = await Lead.find()
+      .select('-__v')
+      .populate('assignedTo', '_id name email')
+      .populate('assignmentHistory.fromUser', '_id name email')
+      .populate('assignmentHistory.toUser', '_id name email')
+      .lean();
     
     const stats = {
       total: leads.length,
@@ -468,8 +545,13 @@ router.get('/all-leads', auth, adminAuth, async (req, res) => {
 // Get overall statistics (all users combined)
 router.get('/overall-stats', auth, adminAuth, async (req, res) => {
   try {
-    const leads = await Lead.find().populate('assignedTo', 'name email');
-    const users = await User.find({ role: 'user' }).select('-password');
+    const leads = await Lead.find()
+      .select('status assignedTo')
+      .populate('assignedTo', 'name email')
+      .lean();
+    const users = await User.find({ role: 'user' })
+      .select('-password -__v')
+      .lean();
     
     const statusBreakdown = {};
     const userStats = [];
@@ -702,9 +784,11 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
       ]
     };
     const leads = await Lead.find(query)
+      .select('name contact email city university course profession status assignedTo updatedAt notes')
       .limit(100)
       .sort({ updatedAt: -1 })
-      .populate('assignedTo', 'name email');
+      .populate('assignedTo', 'name email')
+      .lean();
     const results = leads.map(l => ({
       id: l._id,
       name: l.name,
@@ -724,3 +808,312 @@ router.get('/search-leads', auth, adminAuth, async (req, res) => {
     res.status(500).json({ message: 'Search failed', error: err.message });
   }
 });
+
+// Create single lead manually (admin)
+router.post('/create-lead', auth, adminAuth, async (req, res) => {
+  try {
+    const { name, contact, email, city, university, course, profession, source, status, assignedTo } = req.body;
+    
+    if (!name || !contact) {
+      return res.status(400).json({ message: 'Name and contact are required' });
+    }
+
+    if (!assignedTo) {
+      return res.status(400).json({ message: 'Assigned user is required' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(assignedTo);
+    if (!user || user.role !== 'user') {
+      return res.status(404).json({ message: 'Assigned user not found' });
+    }
+
+    // Check for duplicates
+    const normEmail = email ? email.trim().toLowerCase() : '';
+    const normContact = contact ? String(contact).replace(/\D/g, '') : '';
+
+    if (normEmail) {
+      const existingByEmail = await Lead.findOne({ email: new RegExp(`^${normEmail}$`, 'i') });
+      if (existingByEmail) {
+        return res.status(400).json({ message: 'Lead with this email already exists' });
+      }
+    }
+
+    if (normContact) {
+      const existingByContact = await Lead.findOne({ contact: normContact });
+      if (existingByContact) {
+        return res.status(400).json({ message: 'Lead with this contact already exists' });
+      }
+    }
+
+    const initialStatus = status || 'Fresh';
+    
+    const lead = new Lead({
+      name: name.trim(),
+      contact: normContact,
+      email: normEmail || undefined,
+      city: city ? city.trim() : undefined,
+      university: university ? university.trim() : undefined,
+      course: course ? course.trim() : undefined,
+      profession: profession ? profession.trim() : undefined,
+      source: source || 'Other',
+      status: initialStatus,
+      assignedTo,
+      createdBy: req.userId,
+      statusHistory: [{
+        status: initialStatus,
+        changedAt: new Date(),
+        changedBy: req.userId
+      }]
+    });
+
+    await lead.save();
+    res.status(201).json({ message: 'Lead created successfully', lead });
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating lead', error: error.message });
+  }
+});
+
+// Bulk delete leads
+router.post('/bulk-delete-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    const result = await Lead.deleteMany({ _id: { $in: leadIds } });
+    
+    res.json({ 
+      message: `${result.deletedCount} lead(s) deleted successfully`,
+      deletedCount: result.deletedCount 
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting leads', error: error.message });
+  }
+});
+
+// Bulk update lead status
+router.post('/bulk-update-status', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, status } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!status) {
+      return res.status(400).json({ message: 'Status is required' });
+    }
+
+    // Valid statuses (must match Lead model)
+    const validStatuses = [
+      'Fresh',
+      'Buffer fresh',
+      'Did not pick',
+      'Request call back',
+      'Follow up',
+      'Counselled',
+      'Interested in next batch',
+      'Registration fees paid',
+      'Enrolled',
+      'Junk/not interested'
+    ];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
+    }
+
+    // Use bulkWrite for much faster batch updates
+    const now = new Date();
+    const statusHistoryEntry = {
+      status,
+      changedBy: req.userId,
+      changedAt: now
+    };
+    
+    const bulkOps = leadIds.map(leadId => ({
+      updateOne: {
+        filter: { _id: leadId },
+        update: {
+          $set: { 
+            status: status,
+            updatedAt: now
+          },
+          $push: { 
+            statusHistory: statusHistoryEntry 
+          }
+        }
+      }
+    }));
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+    
+    res.json({ 
+      message: `${result.modifiedCount} lead(s) updated successfully`,
+      updatedCount: result.modifiedCount
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating leads', error: error.message });
+  }
+});
+
+// Bulk transfer leads
+router.post('/bulk-transfer-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, toUserId } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!toUserId) {
+      return res.status(400).json({ message: 'Target user ID is required' });
+    }
+
+    // Verify target user exists
+    const toUser = await User.findById(toUserId);
+    if (!toUser || toUser.role !== 'user') {
+      return res.status(404).json({ message: 'Target user not found' });
+    }
+
+    // Fetch current assignments for history tracking
+    const leads = await Lead.find({ _id: { $in: leadIds } }).select('_id assignedTo').lean();
+    
+    // Use bulkWrite for much faster batch updates
+    const now = new Date();
+    const bulkOps = leads.map(lead => ({
+      updateOne: {
+        filter: { _id: lead._id },
+        update: {
+          $set: { 
+            assignedTo: toUserId,
+            updatedAt: now
+          },
+          $push: { 
+            assignmentHistory: {
+              action: 'transferred',
+              fromUser: lead.assignedTo,
+              toUser: toUserId,
+              changedBy: req.userId,
+              changedAt: now
+            }
+          }
+        }
+      }
+    }));
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+
+    res.json({ 
+      message: `${result.modifiedCount} lead(s) transferred to ${toUser.name} successfully`,
+      transferredCount: result.modifiedCount,
+      toUser: { name: toUser.name, email: toUser.email }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error transferring leads', error: error.message });
+  }
+});
+
+// Combined bulk operation: update status AND/OR transfer leads in one transaction
+router.post('/bulk-update-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, status, toUserId } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!status && !toUserId) {
+      return res.status(400).json({ message: 'At least one action (status or transfer) is required' });
+    }
+
+    // Validate status if provided
+    if (status) {
+      const validStatuses = [
+        'Fresh', 'Buffer fresh', 'Did not pick', 'Request call back',
+        'Follow up', 'Counselled', 'Interested in next batch',
+        'Registration fees paid', 'Enrolled', 'Junk/not interested'
+      ];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status value' });
+      }
+    }
+
+    // Verify target user if transfer requested
+    let toUser = null;
+    if (toUserId) {
+      toUser = await User.findById(toUserId);
+      if (!toUser || toUser.role !== 'user') {
+        return res.status(404).json({ message: 'Target user not found' });
+      }
+    }
+
+    // Fetch current data for history tracking (only if needed)
+    const leads = toUserId 
+      ? await Lead.find({ _id: { $in: leadIds } }).select('_id assignedTo').lean()
+      : null;
+    
+    // Build update operations
+    const now = new Date();
+    const bulkOps = leadIds.map((leadId, index) => {
+      const update = {
+        $set: { updatedAt: now }
+      };
+      const push = {};
+
+      // Add status update
+      if (status) {
+        update.$set.status = status;
+        push.statusHistory = {
+          status,
+          changedBy: req.userId,
+          changedAt: now
+        };
+      }
+
+      // Add transfer update
+      if (toUserId && leads) {
+        const lead = leads.find(l => l._id.toString() === leadId.toString());
+        update.$set.assignedTo = toUserId;
+        push.assignmentHistory = {
+          action: 'transferred',
+          fromUser: lead ? lead.assignedTo : null,
+          toUser: toUserId,
+          changedBy: req.userId,
+          changedAt: now
+        };
+      }
+
+      // Add $push only if there are items to push
+      if (Object.keys(push).length > 0) {
+        update.$push = push;
+      }
+
+      return {
+        updateOne: {
+          filter: { _id: leadId },
+          update
+        }
+      };
+    });
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+
+    // Build response message
+    let actions = [];
+    if (status) actions.push(`status to "${status}"`);
+    if (toUserId) actions.push(`assignment to ${toUser.name}`);
+    
+    res.json({ 
+      message: `${result.modifiedCount} lead(s) updated: ${actions.join(' and ')}`,
+      modifiedCount: result.modifiedCount,
+      status: status || null,
+      toUser: toUser ? { name: toUser.name, email: toUser.email } : null
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating leads', error: error.message });
+  }
+});
+
+module.exports = router;

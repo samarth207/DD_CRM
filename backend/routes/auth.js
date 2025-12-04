@@ -54,20 +54,35 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
   try {
+    console.log('Login attempt:', { 
+      email: req.body.email, 
+      hasPassword: !!req.body.password,
+      body: req.body 
+    });
+    
     const { email, password } = req.body;
+    
+    if (!email || !password) {
+      console.log('Missing email or password');
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
 
     // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
+      console.log('User not found:', email);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      console.log('Password mismatch for user:', email);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    console.log('Login successful for user:', email);
+    
     // Create token
     const token = jwt.sign(
       { userId: user._id, role: user.role },

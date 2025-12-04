@@ -11,6 +11,11 @@ const leadSchema = new mongoose.Schema({
   university: { type: String },
   course: { type: String },
   profession: { type: String },
+  source: {
+    type: String,
+    enum: ['Meta', 'Google', 'LinkedIn', 'Instagram', 'Facebook', 'Direct', 'Referral', 'Website', 'Other'],
+    default: 'Other'
+  },
   status: {
     type: String,
     enum: [
@@ -81,5 +86,14 @@ leadSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Indexes for performance optimization
+leadSchema.index({ assignedTo: 1, status: 1 }); // Compound index for user's leads filtered by status
+leadSchema.index({ assignedTo: 1, updatedAt: -1 }); // For sorting user's leads by update time
+leadSchema.index({ email: 1 }, { sparse: true }); // For duplicate checking and lookups
+leadSchema.index({ contact: 1 }, { sparse: true }); // For duplicate checking and lookups
+leadSchema.index({ status: 1 }); // For status-based aggregations
+leadSchema.index({ university: 1, course: 1 }); // For filtering by university and course
+leadSchema.index({ nextCallDateTime: 1 }, { sparse: true }); // For upcoming call reminders
 
 module.exports = mongoose.model('Lead', leadSchema);

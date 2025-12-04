@@ -7,9 +7,51 @@ const router = express.Router();
 // Get all leads for logged-in user
 router.get('/', auth, async (req, res) => {
   try {
-    const leads = await Lead.find({ assignedTo: req.userId })
-      .sort({ createdAt: -1 });
-    res.json(leads);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100; // Default 100 leads per page
+    const skip = (page - 1) * limit;
+    
+    const statusFilter = req.query.status;
+    const searchQuery = req.query.search;
+    
+    // Build query
+    const query = { assignedTo: req.userId };
+    if (statusFilter) {
+      query.status = statusFilter;
+    }
+    if (searchQuery) {
+      const searchRegex = new RegExp(searchQuery, 'i');
+      query.$or = [
+        { name: searchRegex },
+        { contact: searchRegex },
+        { email: searchRegex },
+        { city: searchRegex },
+        { university: searchRegex },
+        { course: searchRegex },
+        { profession: searchRegex }
+      ];
+    }
+    
+    // Execute query with pagination
+    const [leads, totalCount] = await Promise.all([
+      Lead.find(query)
+        .select('-__v')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Lead.countDocuments(query)
+    ]);
+    
+    res.json({
+      leads,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        totalCount,
+        hasMore: skip + leads.length < totalCount
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -21,7 +63,7 @@ router.get('/:id', auth, async (req, res) => {
     const lead = await Lead.findOne({ 
       _id: req.params.id, 
       assignedTo: req.userId 
-    });
+    }).select('-__v');
     
     if (!lead) {
       return res.status(404).json({ message: 'Lead not found' });
