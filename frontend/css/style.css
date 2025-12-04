@@ -376,7 +376,7 @@ body {
   animation: fadeInUp 0.25s ease;
 }
 
-.status-modal-content { width: min(1400px, 96%); }
+.status-modal-content { width: min(90vw, 1600px); max-width: 95vw; }
 
 .modal-title {
   font-size: 18px;
@@ -594,6 +594,10 @@ body {
   padding: 12px 14px;
   text-align: left;
   border-bottom: 1px solid #f3f4f6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
 .data-table th, .table th {

@@ -31,6 +31,27 @@ function closeCreateUserModal() {
 // Global Escape key handler for all modals
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
+    // Close admin lead modal first (highest priority - on top of everything)
+    const adminLeadModal = document.getElementById('admin-lead-modal');
+    if (adminLeadModal && adminLeadModal.style.display === 'flex') {
+      closeAdminLeadModal();
+      return;
+    }
+    
+    // Close status leads modal (when it's on top of status distribution)
+    const statusLeadsModal = document.getElementById('status-leads-modal');
+    if (statusLeadsModal && statusLeadsModal.style.display === 'flex') {
+      closeStatusLeadsModal();
+      return;
+    }
+    
+    // Close status distribution modal (only if status leads is not open)
+    const statusDistModal = document.getElementById('status-distribution-modal');
+    if (statusDistModal && statusDistModal.style.display === 'flex') {
+      closeStatusDistributionModal();
+      return;
+    }
+    
     // Close brochure modal
     const brochureModal = document.getElementById('add-brochure-modal');
     if (brochureModal && brochureModal.style.display === 'flex') {
@@ -312,6 +333,9 @@ let currentViewedUserId = null;
 let statusChart = null;
 let overallStatusChart = null;
 let userLeadsChart = null;
+let statusUserDistributionChart = null;
+let currentStatusForDrillDown = null;
+let currentStatusLeads = [];
 let selectedUserIds = [];
 let currentUserLeads = []; // store leads from selected user for client-side filtering
 let globalSearchTimer = null;
@@ -669,28 +693,58 @@ function displayUserProgress(data) {
   ).length;
   document.getElementById('user-active-leads').textContent = activeLeads;
   
-  // Display status breakdown
-  const statusBreakdown = document.getElementById('status-breakdown');
-  statusBreakdown.innerHTML = '';
-  
-  for (const [status, count] of Object.entries(data.statusBreakdown)) {
-    const statusItem = document.createElement('div');
-    statusItem.className = 'status-item';
-    statusItem.innerHTML = `
-      <h4>${status}</h4>
-      <p>${count}</p>
-    `;
-    statusBreakdown.appendChild(statusItem);
-  }
-  
   // Create/Update Chart
-  updateStatusChart(data.statusBreakdown);
+  updateStatusChart(data.statusBreakdown, data.leads);
   
   // Display leads table
+  renderUserLeadsTable(data.leads);
+}
+
+// Filter and search functionality for user leads
+document.getElementById('user-lead-search').addEventListener('input', applyUserLeadsFilters);
+document.getElementById('user-status-filter').addEventListener('change', applyUserLeadsFilters);
+
+function applyUserLeadsFilters() {
+  const searchTerm = document.getElementById('user-lead-search').value.toLowerCase();
+  const statusFilter = document.getElementById('user-status-filter').value;
+  
+  let filteredLeads = currentUserLeads;
+  
+  // Apply status filter
+  if (statusFilter) {
+    filteredLeads = filteredLeads.filter(lead => lead.status === statusFilter);
+  }
+  
+  // Apply search filter
+  if (searchTerm) {
+    filteredLeads = filteredLeads.filter(lead => {
+      return (
+        (lead.name && lead.name.toLowerCase().includes(searchTerm)) ||
+        (lead.contact && lead.contact.toLowerCase().includes(searchTerm)) ||
+        (lead.email && lead.email.toLowerCase().includes(searchTerm)) ||
+        (lead.city && lead.city.toLowerCase().includes(searchTerm)) ||
+        (lead.university && lead.university.toLowerCase().includes(searchTerm)) ||
+        (lead.course && lead.course.toLowerCase().includes(searchTerm))
+      );
+    });
+  }
+  
+  // Update table
+  renderUserLeadsTable(filteredLeads);
+}
+
+function renderUserLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
   tbody.innerHTML = '';
   
-  data.leads.forEach(lead => {
+  if (leads.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">No leads found</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+  
+  leads.forEach(lead => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="clickable" data-lead-id="${lead.id}">${lead.name || ''}</td>
@@ -700,19 +754,26 @@ function displayUserProgress(data) {
       <td class="clickable" data-lead-id="${lead.id}">${lead.university || 'N/A'}</td>
       <td class="clickable" data-lead-id="${lead.id}">${lead.course || 'N/A'}</td>
       <td class="clickable" data-lead-id="${lead.id}">${lead.profession || 'N/A'}</td>
+      <td class="clickable" data-lead-id="${lead.id}">${lead.source || 'Other'}</td>
       <td class="clickable" data-lead-id="${lead.id}"><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
       <td class="clickable" data-lead-id="${lead.id}">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
     `;
     tbody.appendChild(tr);
   });
-
-  // Add click handlers to open modal
+  
+  // Add click handlers
   tbody.querySelectorAll('.clickable').forEach(cell => {
     cell.addEventListener('click', () => {
       const leadId = cell.getAttribute('data-lead-id');
       openLeadModal(leadId);
     });
   });
+}
+
+function clearUserLeadsFilter() {
+  document.getElementById('user-lead-search').value = '';
+  document.getElementById('user-status-filter').value = '';
+  renderUserLeadsTable(currentUserLeads);
 }
 
 function showMessage(message, type) {
@@ -855,7 +916,7 @@ function createOverallStatusChart(statusBreakdown) {
         if (!elements || elements.length === 0) return;
         const idx = elements[0].index;
         const status = labels[idx];
-        await showStatusLeadsModal(status);
+        await showStatusDistributionModal(status);
       }
     }
   });
@@ -919,6 +980,228 @@ function closeStatusLeadsModal() {
   // Remove backdrop click listener to avoid leaks
   modal.onclick = null;
 }
+
+// New drill-down modal functions
+async function showStatusDistributionModal(status) {
+  try {
+    const modal = document.getElementById('status-distribution-modal');
+    if (!modal) return;
+
+    // Fetch all leads
+    const response = await apiCall('/admin/all-leads');
+    const data = await response.json();
+    if (!response.ok) return;
+
+    // Filter leads by status
+    const leads = data.leads.filter(l => l.status === status);
+    currentStatusForDrillDown = status;
+    currentStatusLeads = leads;
+
+    // Update modal title
+    document.getElementById('status-distribution-title').textContent = `${status} - User Distribution`;
+    document.getElementById('status-distribution-subtitle').textContent = `${leads.length} lead${leads.length !== 1 ? 's' : ''} with status "${status}"`;
+
+    // Build user distribution data
+    const userCounts = {};
+    leads.forEach(lead => {
+      const userName = lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned';
+      const userId = lead.assignedTo && lead.assignedTo._id ? lead.assignedTo._id : 'unassigned';
+      if (!userCounts[userId]) {
+        userCounts[userId] = { name: userName, count: 0, id: userId };
+      }
+      userCounts[userId].count++;
+    });
+
+    const userStats = Object.values(userCounts);
+    createStatusUserDistributionChart(userStats, status);
+
+    // Populate the all-leads table
+    populateStatusDistributionTable(leads);
+
+    // Reset table visibility
+    document.getElementById('status-distribution-table-section').style.display = 'none';
+    document.getElementById('toggle-status-table-btn').innerHTML = '<i class="fas fa-table"></i> Show All Leads Table';
+
+    // Show modal
+    document.body.style.overflow = 'hidden';
+    modal.style.display = 'flex';
+    modal.onclick = (e) => {
+      if (e.target === modal) closeStatusDistributionModal();
+    };
+  } catch (err) {
+    console.error('Error showing status distribution modal', err);
+  }
+}
+
+function createStatusUserDistributionChart(userStats, status) {
+  const ctx = document.getElementById('statusUserDistributionChart');
+  if (!ctx) return;
+
+  const labels = userStats.map(u => u.name);
+  const data = userStats.map(u => u.count);
+  const userIds = userStats.map(u => u.id);
+
+  const colors = {
+    'Fresh': '#0066cc',
+    'Buffer fresh': '#60a5fa',
+    'Did not pick': '#9ca3af',
+    'Request call back': '#8b5cf6',
+    'Follow up': '#f59e0b',
+    'Counselled': '#22c55e',
+    'Interested in next batch': '#6366f1',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#2e7d32',
+    'Junk/not interested': '#c2185b'
+  };
+
+  const backgroundColor = colors[status] || '#667eea';
+
+  if (statusUserDistributionChart) {
+    statusUserDistributionChart.destroy();
+  }
+
+  statusUserDistributionChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Leads',
+        data: data,
+        backgroundColor: backgroundColor,
+        borderWidth: 1,
+        borderColor: backgroundColor
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) { return context.parsed.y + ' leads'; }
+          }
+        }
+      },
+      scales: {
+        y: { 
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) {
+              if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+              else if (value >= 1000) return (value / 1000).toFixed(1) + 'k';
+              return value;
+            }
+          }
+        }
+      },
+      onClick: async (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const userId = userIds[idx];
+        const userName = labels[idx];
+        await showUserStatusLeadsTable(status, userId, userName);
+      }
+    }
+  });
+}
+
+async function showUserStatusLeadsTable(status, userId, userName) {
+  // Filter current status leads by user
+  const leads = currentStatusLeads.filter(lead => {
+    const leadUserId = lead.assignedTo && lead.assignedTo._id ? lead.assignedTo._id : 'unassigned';
+    return leadUserId === userId;
+  });
+
+  // Show the existing status-leads-modal with filtered data
+  const modal = document.getElementById('status-leads-modal');
+  if (!modal) return;
+
+  document.getElementById('status-leads-title').textContent = `${status} - ${userName}`;
+  document.getElementById('status-leads-count').textContent = `${leads.length} lead${leads.length !== 1 ? 's' : ''} for ${userName} with status "${status}"`;
+
+  const tbody = document.getElementById('status-leads-tbody');
+  tbody.innerHTML = '';
+  leads.forEach(lead => {
+    const tr = document.createElement('tr');
+    tr.className = 'status-lead-row';
+    tr.innerHTML = `
+      <td>${lead.name || ''}</td>
+      <td>${lead.contact || ''}</td>
+      <td>${lead.email || ''}</td>
+      <td>${lead.city || ''}</td>
+      <td>${lead.university || ''}</td>
+      <td>${lead.course || ''}</td>
+      <td>${lead.profession || ''}</td>
+      <td>${lead.source || 'Other'}</td>
+      <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status}</span></td>
+      <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
+    tr.addEventListener('click', () => {
+      openLeadModal(lead._id || lead.id);
+    });
+    tbody.appendChild(tr);
+  });
+
+  document.body.style.overflow = 'hidden';
+  modal.style.display = 'flex';
+  // Don't close distribution modal when closing this modal
+  modal.onclick = (e) => {
+    if (e.target === modal) closeStatusLeadsModal();
+  };
+}
+
+function populateStatusDistributionTable(leads) {
+  const tbody = document.getElementById('status-distribution-all-leads-tbody');
+  tbody.innerHTML = '';
+  
+  leads.forEach(lead => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.innerHTML = `
+      <td>${lead.name || ''}</td>
+      <td>${lead.contact || ''}</td>
+      <td>${lead.email || ''}</td>
+      <td>${lead.city || ''}</td>
+      <td>${lead.university || ''}</td>
+      <td>${lead.course || ''}</td>
+      <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
+    tr.addEventListener('click', () => {
+      closeStatusDistributionModal();
+      openLeadModal(lead._id || lead.id);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleStatusDistributionTable() {
+  const tableSection = document.getElementById('status-distribution-table-section');
+  const btn = document.getElementById('toggle-status-table-btn');
+  
+  if (tableSection.style.display === 'none') {
+    tableSection.style.display = 'block';
+    btn.innerHTML = '<i class="fas fa-table"></i> Hide All Leads Table';
+  } else {
+    tableSection.style.display = 'none';
+    btn.innerHTML = '<i class="fas fa-table"></i> Show All Leads Table';
+  }
+}
+
+function closeStatusDistributionModal() {
+  const modal = document.getElementById('status-distribution-modal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  modal.onclick = null;
+  
+  // Destroy chart to free memory
+  if (statusUserDistributionChart) {
+    statusUserDistributionChart.destroy();
+    statusUserDistributionChart = null;
+  }
+}
+
 
 async function showUsersForStatus(status) {
   // Fetch all leads and build a per-user grid for selected status
@@ -1002,17 +1285,33 @@ function createUserLeadsChart(userStats) {
             }
           }
         }
+      },
+      onClick: async (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const userId = userStats[idx].userId;
+        const userName = userStats[idx].userName;
+        if (!userId) return;
+        // Navigate to User Progress section and show this user's details
+        showSection('progress');
+        const selectElement = document.getElementById('progress-user-select');
+        selectElement.value = userId;
+        // Trigger the change event to load user progress
+        selectElement.dispatchEvent(new Event('change'));
       }
     }
   });
 }
 
-function updateStatusChart(statusBreakdown) {
+function updateStatusChart(statusBreakdown, allLeads) {
   const ctx = document.getElementById('statusChart');
   if (!ctx) return;
   
   const labels = Object.keys(statusBreakdown);
   const data = Object.values(statusBreakdown);
+  
+  // Store leads for filtering
+  currentUserLeads = allLeads || currentUserLeads;
   
   // Color palette for different statuses
   const colors = {
@@ -1078,9 +1377,29 @@ function updateStatusChart(statusBreakdown) {
             }
           }
         }
+      },
+      onClick: (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const status = labels[idx];
+        filterLeadsByStatus(status);
       }
     }
   });
+}
+
+function filterLeadsByStatus(status) {
+  const filteredLeads = currentUserLeads.filter(lead => lead.status === status);
+  
+  // Set status filter dropdown and clear search
+  document.getElementById('user-status-filter').value = status;
+  document.getElementById('user-lead-search').value = '';
+  
+  // Update table with filtered leads
+  renderUserLeadsTable(filteredLeads);
+  
+  // Scroll to table
+  document.getElementById('leads-table-container').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function openLeadModal(leadId) {
@@ -1093,25 +1412,28 @@ async function openLeadModal(leadId) {
     document.getElementById('admin-modal-lead-contact').textContent = data.contact || 'N/A';
     document.getElementById('admin-modal-lead-email').textContent = data.email || 'N/A';
     document.getElementById('admin-modal-lead-city').textContent = data.city || 'N/A';
-    document.getElementById('admin-modal-lead-university').textContent = data.university || 'N/A';
-    document.getElementById('admin-modal-lead-course').textContent = data.course || 'N/A';
+    document.getElementById('admin-modal-lead-university').value = data.university || '';
+    document.getElementById('admin-modal-lead-course').value = data.course || '';
     document.getElementById('admin-modal-lead-profession').textContent = data.profession || 'N/A';
     document.getElementById('admin-modal-lead-source').textContent = data.source || 'Other';
     document.getElementById('admin-modal-lead-status').textContent = data.status;
 
-    // Status history
-    const historyContainer = document.getElementById('admin-status-history');
-    historyContainer.innerHTML = '';
-    if (!data.statusHistory || data.statusHistory.length === 0) {
-      historyContainer.innerHTML = '<p style="color:#999;">No status changes yet</p>';
-    } else {
-      data.statusHistory.sort((a,b)=> new Date(b.changedAt) - new Date(a.changedAt)).forEach(entry => {
-        const div = document.createElement('div');
-        div.className = 'note-item';
-        div.innerHTML = `<div class="note-content"><strong>${entry.status}</strong></div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>`;
-        historyContainer.appendChild(div);
-      });
+    // Clear quick update fields
+    document.getElementById('admin-quick-status').value = '';
+    document.getElementById('admin-quick-note').value = '';
+    document.getElementById('admin-quick-datetime').value = '';
+    
+    // Display next call date if exists
+    if (data.nextCallDateTime) {
+      const date = new Date(data.nextCallDateTime);
+      const localDateTime = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      document.getElementById('admin-quick-datetime').value = localDateTime;
     }
+
+    // Display unified timeline
+    displayAdminTimeline(data);
 
     // Assignment history
     const assignContainer = document.getElementById('admin-assignment-history');
@@ -1132,23 +1454,149 @@ async function openLeadModal(leadId) {
       }
     }
 
-    // Notes
-    const notesContainer = document.getElementById('admin-lead-notes');
-    notesContainer.innerHTML = '';
-    if (!data.notes || data.notes.length === 0) {
-      notesContainer.innerHTML = '<p style="color:#999;">No notes</p>';
-    } else {
-      data.notes.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).forEach(note => {
-        const n = document.createElement('div');
-        n.className = 'note-item';
-        n.innerHTML = `<div class="note-content">${note.content}</div><div class="note-date">${new Date(note.createdAt).toLocaleString()}</div>`;
-        notesContainer.appendChild(n);
-      });
-    }
-
     document.getElementById('admin-lead-modal').style.display = 'flex';
   } catch (err) {
     console.error('Error loading lead detail', err);
+  }
+}
+
+function displayAdminTimeline(data) {
+  const container = document.getElementById('admin-timeline-container');
+  container.innerHTML = '';
+  
+  const timeline = [];
+  
+  // Add status history
+  if (data.statusHistory && data.statusHistory.length > 0) {
+    data.statusHistory.forEach(entry => {
+      timeline.push({
+        type: 'status',
+        content: entry.status,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt
+      });
+    });
+  }
+  
+  // Add notes
+  if (data.notes && data.notes.length > 0) {
+    data.notes.forEach(note => {
+      timeline.push({
+        type: 'note',
+        content: note.content,
+        date: new Date(note.createdAt),
+        dateStr: note.createdAt
+      });
+    });
+  }
+  
+  if (timeline.length === 0) {
+    container.innerHTML = '<p style="text-align: center; color: #999;">No activity yet</p>';
+    return;
+  }
+  
+  // Sort by date (newest first)
+  timeline.sort((a, b) => b.date - a.date);
+  
+  timeline.forEach(entry => {
+    const item = document.createElement('div');
+    item.className = 'note-item';
+    
+    if (entry.type === 'status') {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+          <strong>Status changed to:</strong> 
+          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else {
+      item.innerHTML = `
+        <div class="note-content" style="display: flex; gap: 8px;">
+          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+          <span>${entry.content}</span>
+        </div>
+        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    }
+    
+    container.appendChild(item);
+  });
+}
+
+async function quickUpdateAdminLead() {
+  if (!currentLeadId) return;
+  
+  const newStatus = document.getElementById('admin-quick-status').value;
+  const noteContent = document.getElementById('admin-quick-note').value.trim();
+  const dateTimeValue = document.getElementById('admin-quick-datetime').value;
+  
+  // Validate that at least one field is being updated
+  if (!newStatus && !noteContent && !dateTimeValue) {
+    showTransferMessage('Please update at least one field (status, note, or schedule)', 'error');
+    return;
+  }
+  
+  // Validate future date if provided
+  if (dateTimeValue) {
+    const followUpDate = new Date(dateTimeValue);
+    const now = new Date();
+    if (followUpDate <= now) {
+      showTransferMessage('Follow-up time must be in the future', 'error');
+      return;
+    }
+  }
+  
+  try {
+    const updateData = {};
+    if (newStatus) updateData.status = newStatus;
+    if (noteContent) updateData.note = noteContent;
+    if (dateTimeValue) {
+      updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+    }
+    
+    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Clear form fields
+      document.getElementById('admin-quick-status').value = '';
+      document.getElementById('admin-quick-note').value = '';
+      
+      const updates = [];
+      if (newStatus) updates.push('status');
+      if (noteContent) updates.push('note');
+      if (dateTimeValue) updates.push('schedule');
+      
+      showTransferMessage(`Lead updated successfully! (${updates.join(', ')})`, 'success');
+      
+      // Refresh the lead modal
+      await openLeadModal(currentLeadId);
+      
+      // Refresh the user progress view if open
+      const selectedUser = document.getElementById('progress-user-select').value;
+      if (selectedUser) {
+        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
+        const progData = await resp.json();
+        if (resp.ok) displayUserProgress(progData);
+      }
+      
+      // Refresh all leads view if open
+      const allLeadsCard = document.getElementById('all-leads-card');
+      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
+        await loadAllLeads();
+      }
+    } else {
+      showTransferMessage(data.message || 'Failed to update lead', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating lead:', error);
+    showTransferMessage('Failed to update lead', 'error');
   }
 }
 
@@ -1198,6 +1646,84 @@ async function confirmDeleteLead() {
 function cancelDeleteLead() {
   const transferMsg = document.getElementById('transfer-message');
   transferMsg.style.display = 'none';
+}
+
+// Copy lead details to clipboard (Admin)
+function copyAdminLeadDetails() {
+  if (!currentLeadId) return;
+  
+  const name = document.getElementById('admin-modal-lead-name').textContent;
+  const contact = document.getElementById('admin-modal-lead-contact').textContent;
+  const email = document.getElementById('admin-modal-lead-email').textContent;
+  const university = document.getElementById('admin-modal-lead-university').value;
+  const course = document.getElementById('admin-modal-lead-course').value;
+  
+  const details = `Name: ${name}
+Contact: ${contact}
+Email: ${email}
+University: ${university}
+Course: ${course}`;
+  
+  navigator.clipboard.writeText(details).then(() => {
+    showTransferMessage('Lead details copied to clipboard', 'success');
+    setTimeout(() => {
+      const transferMsg = document.getElementById('transfer-message');
+      transferMsg.style.display = 'none';
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showTransferMessage('Failed to copy to clipboard', 'error');
+  });
+}
+
+// Update lead field (university or course) - Admin
+async function updateAdminLeadField(field) {
+  if (!currentLeadId) return;
+  
+  const value = document.getElementById(`admin-modal-lead-${field}`).value.trim();
+  
+  if (!value) {
+    showTransferMessage(`Please enter a ${field}`, 'error');
+    return;
+  }
+  
+  try {
+    const updateData = {};
+    updateData[field] = value;
+    
+    const response = await apiCall(`/admin/lead/${currentLeadId}/field`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      showTransferMessage(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`, 'success');
+      
+      // Refresh the lead modal
+      await openLeadModal(currentLeadId);
+      
+      // Refresh the user progress view if open
+      const selectedUser = document.getElementById('progress-user-select').value;
+      if (selectedUser) {
+        const resp = await apiCall(`/admin/user-progress/${selectedUser}`);
+        const progData = await resp.json();
+        if (resp.ok) displayUserProgress(progData);
+      }
+      
+      // Refresh all leads view if open
+      const allLeadsCard = document.getElementById('all-leads-card');
+      if (allLeadsCard && allLeadsCard.style.display !== 'none') {
+        await loadAllLeads();
+      }
+    } else {
+      showTransferMessage(data.message || 'Failed to update', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating field:', error);
+    showTransferMessage('Failed to update', 'error');
+  }
 }
 
 function renderUsersTable() {
@@ -1422,22 +1948,7 @@ function closeAdminLeadModal() {
   currentLeadId = null;
 }
 
-// Global escape key handler for all modals
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    // Close admin lead modal
-    const adminLeadModal = document.getElementById('admin-lead-modal');
-    if (adminLeadModal && adminLeadModal.style.display === 'flex') {
-      closeAdminLeadModal();
-    }
-    
-    // Close status leads modal
-    const statusLeadsModal = document.getElementById('status-leads-modal');
-    if (statusLeadsModal && statusLeadsModal.style.display === 'flex') {
-      closeStatusLeadsModal();
-    }
-  }
-});
+// Global escape key handler for all modals (duplicate removed - using the one at top of file)
 
 async function transferLead() {
   if (!currentLeadId) return;
