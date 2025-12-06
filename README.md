@@ -26,6 +26,7 @@ DD CRM is a comprehensive, user-friendly customer relationship management soluti
 - 📊 **Personal Dashboard** - View your lead statistics and progress
 - 🔍 **Lead Details** - Access complete lead information and interaction history
 - 📂 **Universal Brochure Access** - View and share brochures for any university/course
+- 🔔 **Live Update Notifications** - Real-time alerts when admin modifies your lead data (15-second polling)
 
 ---
 
@@ -488,6 +489,27 @@ npm run dev
 3. Add notes, update status
 4. View complete status history
 5. All changes are automatically tracked
+
+---
+
+## 🔔 Live Update Notification System
+
+The CRM features a real-time notification system that keeps users informed when their lead data is updated by administrators.
+
+### How It Works
+- **Automatic Polling**: User dashboard checks for updates every 15 seconds
+- **Smart Notifications**: Non-intrusive banner appears at top when updates are detected
+- **User Control**: Users can refresh immediately or dismiss temporarily
+- **Low Overhead**: Minimal performance impact with efficient timestamp-based queries
+
+### Features
+- Shows count of updated leads
+- Animated refresh icon
+- One-click data refresh
+- Optional dismissal
+- No manual refresh needed
+
+For detailed documentation, see [LIVE_UPDATE_NOTIFICATION.md](./LIVE_UPDATE_NOTIFICATION.md)
 
 ---
 

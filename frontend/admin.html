@@ -2,14 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="description" content="DD CRM Admin Dashboard - Comprehensive lead management and analytics">
   <title>DD CRM - Admin Dashboard</title>
+  
+  <!-- DNS Prefetch & Preconnect for faster external resource loading -->
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  
+  <!-- Optimized resource loading -->
+  <link rel="preload" href="css/style.css" as="style">
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" as="script">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
   <!-- Sidebar Navigation -->
@@ -831,9 +845,25 @@
           <input type="datetime-local" id="admin-quick-datetime" style="width: 100%; padding: 10px; border: 2px solid #fcd34d; border-radius: 8px; font-size: 14px;">
         </div>
         
-        <button onclick="quickUpdateAdminLead()" class="btn btn-primary" style="width: 100%; font-size: 15px; padding: 12px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none;">
-          <i class="fas fa-check-circle"></i> Update Lead
-        </button>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label for="transfer-user-select" style="font-weight: 600; color: #78350f; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #f59e0b;"></i>
+            Transfer Lead (Optional):
+          </label>
+          <select id="transfer-user-select" style="width: 100%; padding: 10px; border: 2px solid #fcd34d; border-radius: 8px; font-size: 14px;">
+            <option value="">-- Keep Current User --</option>
+          </select>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+          <button onclick="quickUpdateAdminLead()" class="btn btn-primary" style="flex: 1; font-size: 15px; padding: 12px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none;">
+            <i class="fas fa-check-circle"></i> Update Lead
+          </button>
+          <button onclick="deleteLead()" class="btn btn-danger" style="font-size: 15px; padding: 12px;">
+            <i class="fas fa-trash-alt"></i> Delete
+          </button>
+        </div>
+        <div id="transfer-message" class="message" style="display: none; margin-top: 12px;"></div>
       </div>
       
       <h3>Timeline</h3>
@@ -841,15 +871,6 @@
       
       <h3>Assignment History</h3>
       <div id="admin-assignment-history" class="notes-list"></div>
-      
-      <h3>Transfer Lead</h3>
-      <div class="form-group">
-        <label for="transfer-user-select">Select New User</label>
-        <select id="transfer-user-select"></select>
-      </div>
-      <button onclick="transferLead()" class="btn btn-primary">Transfer Lead</button>
-      <button onclick="deleteLead()" class="btn btn-danger" style="margin-left:10px;">Delete Lead</button>
-      <div id="transfer-message" class="message" style="display: none; margin-top: 10px;"></div>
     </div>
   </div>
   <!-- Status Leads Modal -->
@@ -1207,7 +1228,7 @@
     <span style="margin-left:16px; color:#9ca3af;">Developed by Samarth</span>
   </footer>
   
-  <script src="js/config.js?v=1.1"></script>
-  <script src="js/admin.js?v=1.1"></script>
+  <script src="js/config.js?v=1.2" defer></script>
+  <script src="js/admin.js?v=1.2" defer></script>
 </body>
 </html>

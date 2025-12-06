@@ -2,10 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="description" content="DD CRM User Dashboard - Manage your leads efficiently">
   <title>DD CRM - User Dashboard</title>
+  
+  <!-- DNS Prefetch & Preconnect for faster external resource loading -->
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- Optimized resource loading -->
+  <link rel="preload" href="css/style.css" as="style">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
@@ -66,69 +77,114 @@
     </div>
   </div>
   
+  <!-- Live Update Notification Banner -->
+  <div id="update-notification-banner" style="display: none; position: fixed; top: 64px; left: 240px; right: 0; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 28px; z-index: 9000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-bottom: 3px solid #1d4ed8;">
+    <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1600px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <i class="fas fa-sync-alt" style="font-size: 18px; animation: spin 2s linear infinite;"></i>
+        <div>
+          <div style="font-weight: 600; font-size: 14px;">Updates Available</div>
+          <div id="update-notification-message" style="font-size: 12px; opacity: 0.95;">Your lead data has been updated by admin. Click to refresh and see the latest changes.</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button id="refresh-data-btn" style="background: white; color: #2563eb; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+          <i class="fas fa-redo" style="margin-right: 6px;"></i>Refresh Now
+        </button>
+        <button id="dismiss-notification-btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+  
   <div class="container with-header">
     <div class="dashboard">
       
-      <!-- Quick Stats Overview -->
-      <div id="dashboard-section">
-        <div class="stats-grid" style="margin-bottom: 26px;">
-          <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-            <h4 style="color: rgba(255,255,255,0.9);">Total Leads</h4>
-            <p id="stat-total" class="stat-number" style="color: white;">0</p>
-            <small style="opacity: 0.9;">All assigned leads</small>
-          </div>
-          <div class="stat-card" style="background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%); color: white;">
-            <h4 style="color: rgba(255,255,255,0.9);">Fresh Leads</h4>
-            <p id="stat-new" class="stat-number" style="color: white;">0</p>
-            <small style="opacity: 0.9;">Pending first contact</small>
-          </div>
-          <div class="stat-card" style="background: linear-gradient(135deg, #b45309 0%, #d97706 100%); color: white;">
-            <h4 style="color: rgba(255,255,255,0.9);">Follow-ups</h4>
-            <p id="stat-hot" class="stat-number" style="color: white;">0</p>
-            <small style="opacity: 0.9;">Requires attention</small>
-          </div>
-          <div class="stat-card" style="background: linear-gradient(135deg, #047857 0%, #10b981 100%); color: white;">
-            <h4 style="color: rgba(255,255,255,0.9);">Enrolled</h4>
-            <p id="stat-closed" class="stat-number" style="color: white;">0</p>
-            <small style="opacity: 0.9;">Successfully closed</small>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Actions & Recent Activity -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 26px;">
-        <div class="card">
-          <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
-            <i class="fas fa-clock" style="color: #6366f1;"></i>
-            Recent Activity
-          </h3>
-          <div id="recent-activity-dashboard" style="display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto;">
-            <p style="color: #9ca3af; font-size: 14px; text-align: center; padding: 20px 0;">No recent activity</p>
-          </div>
-        </div>
-        
-        <div class="card">
-          <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
-            <i class="fas fa-filter" style="color: #6366f1;"></i>
-            Quick Filters
-          </h3>
-          <div style="display: flex; flex-direction: column; gap: 11px;">
-            <button onclick="quickFilter('Fresh')" class="btn btn-secondary" style="justify-content: flex-start;">
-              <i class="fas fa-star"></i> Fresh Leads
-            </button>
-            <button onclick="quickFilter('Follow up')" class="btn btn-secondary" style="justify-content: flex-start;">
-              <i class="fas fa-phone"></i> Follow-ups
-            </button>
-            <button onclick="quickFilter('Request call back')" class="btn btn-secondary" style="justify-content: flex-start;">
-              <i class="fas fa-phone-volume"></i> Callbacks
-            </button>
-            <button onclick="quickFilter('Did not pick')" class="btn btn-secondary" style="justify-content: flex-start;">
-              <i class="fas fa-phone-slash"></i> Not Answered
-            </button>
-            <button onclick="quickFilter('')" class="btn btn-primary" style="justify-content: flex-start;">
-              <i class="fas fa-list"></i> View All Leads
-            </button>
-          </div>
+      <!-- Status Filter Buttons -->
+      <div class="card" style="margin-bottom: 26px;">
+        <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
+          <i class="fas fa-filter" style="color: #6366f1;"></i>
+          Filter by Status
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+          <button onclick="quickFilter('')" class="status-filter-btn status-filter-all">
+            <i class="fas fa-list"></i>
+            <div>
+              <div class="status-filter-label">All Leads</div>
+              <div class="status-filter-count" id="count-all">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Fresh')" class="status-filter-btn status-filter-fresh">
+            <i class="fas fa-star"></i>
+            <div>
+              <div class="status-filter-label">Fresh</div>
+              <div class="status-filter-count" id="count-fresh">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Buffer fresh')" class="status-filter-btn status-filter-buffer">
+            <i class="fas fa-clock"></i>
+            <div>
+              <div class="status-filter-label">Buffer Fresh</div>
+              <div class="status-filter-count" id="count-buffer-fresh">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Did not pick')" class="status-filter-btn status-filter-not-picked">
+            <i class="fas fa-phone-slash"></i>
+            <div>
+              <div class="status-filter-label">Did Not Pick</div>
+              <div class="status-filter-count" id="count-did-not-pick">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Request call back')" class="status-filter-btn status-filter-callback">
+            <i class="fas fa-phone-volume"></i>
+            <div>
+              <div class="status-filter-label">Request Call Back</div>
+              <div class="status-filter-count" id="count-request-call-back">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Follow up')" class="status-filter-btn status-filter-followup">
+            <i class="fas fa-phone"></i>
+            <div>
+              <div class="status-filter-label">Follow Up</div>
+              <div class="status-filter-count" id="count-follow-up">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Counselled')" class="status-filter-btn status-filter-counselled">
+            <i class="fas fa-comments"></i>
+            <div>
+              <div class="status-filter-label">Counselled</div>
+              <div class="status-filter-count" id="count-counselled">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Interested in next batch')" class="status-filter-btn status-filter-interested">
+            <i class="fas fa-calendar-alt"></i>
+            <div>
+              <div class="status-filter-label">Interested in Next Batch</div>
+              <div class="status-filter-count" id="count-interested">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Registration fees paid')" class="status-filter-btn status-filter-fees-paid">
+            <i class="fas fa-money-bill-wave"></i>
+            <div>
+              <div class="status-filter-label">Registration Fees Paid</div>
+              <div class="status-filter-count" id="count-fees-paid">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Enrolled')" class="status-filter-btn status-filter-enrolled">
+            <i class="fas fa-graduation-cap"></i>
+            <div>
+              <div class="status-filter-label">Enrolled</div>
+              <div class="status-filter-count" id="count-enrolled">0</div>
+            </div>
+          </button>
+          <button onclick="quickFilter('Junk/not interested')" class="status-filter-btn status-filter-junk">
+            <i class="fas fa-trash-alt"></i>
+            <div>
+              <div class="status-filter-label">Junk/Not Interested</div>
+              <div class="status-filter-count" id="count-junk">0</div>
+            </div>
+          </button>
         </div>
       </div>
       
@@ -152,6 +208,16 @@
             <option value="Enrolled">Enrolled</option>
             <option value="Junk/not interested">Junk/not interested</option>
           </select>
+          <select id="filter-date" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px; min-width: 150px;">
+            <option value="">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="thisweek">This Week</option>
+            <option value="lastweek">Last Week</option>
+            <option value="thismonth">This Month</option>
+            <option value="custom">Custom Date</option>
+          </select>
+          <input type="date" id="filter-custom-date" style="display: none; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;">
           <button onclick="clearFilters()" class="btn btn-secondary" style="white-space: nowrap;">
             <i class="fas fa-times"></i> Clear
           </button>
@@ -459,8 +525,8 @@
     <span style="margin-left:16px; color:#9ca3af;">Developed by Samarth</span>
   </footer>
   
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="js/config.js?v=1.1"></script>
-  <script src="js/user.js?v=1.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+  <script src="js/config.js?v=1.2" defer></script>
+  <script src="js/user.js?v=1.2" defer></script>
 </body>
 </html>

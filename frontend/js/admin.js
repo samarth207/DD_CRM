@@ -1456,6 +1456,12 @@ async function openLeadModal(leadId) {
     document.getElementById('admin-quick-note').value = '';
     document.getElementById('admin-quick-datetime').value = '';
     
+    // Clear transfer field
+    const transferUserSelect = document.getElementById('transfer-user-select');
+    if (transferUserSelect) {
+      transferUserSelect.value = '';
+    }
+    
     // Display next call date if exists
     if (data.nextCallDateTime) {
       const date = new Date(data.nextCallDateTime);
@@ -1564,10 +1570,11 @@ async function quickUpdateAdminLead() {
   const newStatus = document.getElementById('admin-quick-status').value;
   const noteContent = document.getElementById('admin-quick-note').value.trim();
   const dateTimeValue = document.getElementById('admin-quick-datetime').value;
+  const newUserId = document.getElementById('transfer-user-select').value;
   
   // Validate that at least one field is being updated
-  if (!newStatus && !noteContent && !dateTimeValue) {
-    showTransferMessage('Please update at least one field (status, note, or schedule)', 'error');
+  if (!newStatus && !noteContent && !dateTimeValue && !newUserId) {
+    showTransferMessage('Please update at least one field (status, note, schedule, or transfer)', 'error');
     return;
   }
   
@@ -1582,29 +1589,73 @@ async function quickUpdateAdminLead() {
   }
   
   try {
-    const updateData = {};
-    if (newStatus) updateData.status = newStatus;
-    if (noteContent) updateData.note = noteContent;
-    if (dateTimeValue) {
-      updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+    let updateSuccess = false;
+    let transferSuccess = false;
+    const updates = [];
+    
+    // First, update lead details if any are provided
+    if (newStatus || noteContent || dateTimeValue) {
+      const updateData = {};
+      if (newStatus) {
+        updateData.status = newStatus;
+        updates.push('status');
+      }
+      if (noteContent) {
+        updateData.note = noteContent;
+        updates.push('note');
+      }
+      if (dateTimeValue) {
+        updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+        updates.push('schedule');
+      }
+      
+      const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
+      
+      if (response.ok) {
+        updateSuccess = true;
+      } else {
+        const data = await response.json();
+        showTransferMessage(data.message || 'Update failed', 'error');
+        return;
+      }
     }
     
-    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
-      method: 'PUT',
-      body: JSON.stringify(updateData)
-    });
+    // Then, transfer lead if user is selected
+    if (newUserId) {
+      // Check if transfer is to same user
+      const leadResp = await apiCall(`/admin/lead/${currentLeadId}`);
+      const leadData = await leadResp.json();
+      if (leadResp.ok && leadData.assignedTo && leadData.assignedTo._id === newUserId) {
+        showTransferMessage('Lead is already assigned to this user', 'error');
+        return;
+      }
+
+      const transferData = { newUserId };
+
+      const response = await apiCall(`/admin/transfer-lead/${currentLeadId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(transferData)
+      });
+      
+      if (response.ok) {
+        transferSuccess = true;
+        updates.push('transferred');
+      } else {
+        const data = await response.json();
+        showTransferMessage(data.message || 'Transfer failed', 'error');
+        return;
+      }
+    }
     
-    const data = await response.json();
-    
-    if (response.ok) {
+    // If we got here, everything succeeded
+    if (updateSuccess || transferSuccess) {
       // Clear form fields
       document.getElementById('admin-quick-status').value = '';
       document.getElementById('admin-quick-note').value = '';
-      
-      const updates = [];
-      if (newStatus) updates.push('status');
-      if (noteContent) updates.push('note');
-      if (dateTimeValue) updates.push('schedule');
+      document.getElementById('transfer-user-select').value = '';
       
       showTransferMessage(`Lead updated successfully! (${updates.join(', ')})`, 'success');
       
@@ -1958,6 +2009,8 @@ function closeAdminLeadModal() {
 async function transferLead() {
   if (!currentLeadId) return;
   const newUserId = document.getElementById('transfer-user-select').value;
+  const transferNote = document.getElementById('transfer-note').value.trim();
+  
   if (!newUserId) {
     showTransferMessage('Please select a user to transfer', 'error');
     return;
@@ -1971,13 +2024,20 @@ async function transferLead() {
       return;
     }
 
+    const transferData = { newUserId };
+    if (transferNote) {
+      transferData.note = transferNote;
+    }
+
     const response = await apiCall(`/admin/transfer-lead/${currentLeadId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ newUserId })
+      body: JSON.stringify(transferData)
     });
     const data = await response.json();
     if (response.ok) {
-      showTransferMessage('Lead transferred successfully', 'success');
+      showTransferMessage('Lead transferred successfully' + (transferNote ? ' with note' : ''), 'success');
+      // Clear the transfer note field
+      document.getElementById('transfer-note').value = '';
       // Refresh modal content to reflect updated assignment history
       await openLeadModal(currentLeadId);
       // Refresh entire dashboard dynamically
@@ -2900,13 +2960,24 @@ function openCreateLeadModal() {
   document.getElementById('create-lead-form').reset();
   document.getElementById('create-lead-message').style.display = 'none';
   
-  // Populate user select
+  // Populate user select with clearer display
   const assignedSelect = document.getElementById('lead-assigned-to');
-  assignedSelect.innerHTML = '<option value="">Select user...</option>';
+  assignedSelect.innerHTML = '<option value="">-- Select User to Assign --</option>';
+  
+  if (!users || users.length === 0) {
+    console.error('No users available for assignment');
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No users available (please refresh page)';
+    option.disabled = true;
+    assignedSelect.appendChild(option);
+    return;
+  }
+  
   users.forEach(u => {
     const option = document.createElement('option');
     option.value = u._id;
-    option.textContent = `${u.name} (${u.email})`;
+    option.textContent = u.name; // Show only name for clarity
     assignedSelect.appendChild(option);
   });
 }
