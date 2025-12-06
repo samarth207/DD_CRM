@@ -14,6 +14,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  /* Performance optimizations */
+  will-change: scroll-position;
 }
 
 .container {
@@ -33,6 +35,15 @@ body {
   }
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Sidebar Navigation */
 .sidebar {
   position: fixed;
@@ -46,6 +57,9 @@ body {
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  /* Performance optimizations */
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .sidebar-logo {
@@ -63,7 +77,8 @@ body {
 
 .sidebar-nav {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: visible;
+  overflow-x: hidden;
   padding: 4px 12px;
 }
 
@@ -358,22 +373,25 @@ body {
   background: rgba(17,24,39,0.55);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 50px;
+  padding: 20px;
   z-index: 10000;
+  overflow-y: auto;
 }
 
 .modal-content {
   background: #ffffff;
   border-radius: 12px;
   width: min(1200px, 94%);
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - 40px);
   overflow-y: auto;
   padding: 26px 28px 30px;
   box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15), 0 4px 10px -2px rgba(0,0,0,0.08);
   border: 1px solid #e5e7eb;
   animation: fadeInUp 0.25s ease;
+  position: relative;
+  margin: auto;
 }
 
 .status-modal-content { width: min(90vw, 1600px); max-width: 95vw; }
@@ -629,6 +647,108 @@ body {
   background: #e9ecef !important;
 }
 
+/* Status Filter Buttons */
+.status-filter-btn {
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.status-filter-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: #6366f1;
+}
+
+.status-filter-btn i {
+  font-size: 20px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.status-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.status-filter-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: #6366f1;
+}
+
+/* Status filter button colors */
+.status-filter-all i {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.status-filter-fresh i {
+  background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+  color: #1e40af;
+}
+
+.status-filter-buffer i {
+  background: linear-gradient(135deg, #e0f2fe 0%, #7dd3fc 100%);
+  color: #075985;
+}
+
+.status-filter-not-picked i {
+  background: linear-gradient(135deg, #f3f4f6 0%, #d1d5db 100%);
+  color: #374151;
+}
+
+.status-filter-callback i {
+  background: linear-gradient(135deg, #e9d5ff 0%, #c084fc 100%);
+  color: #7c3aed;
+}
+
+.status-filter-followup i {
+  background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%);
+  color: #d97706;
+}
+
+.status-filter-counselled i {
+  background: linear-gradient(135deg, #dcfce7 0%, #86efac 100%);
+  color: #166534;
+}
+
+.status-filter-interested i {
+  background: linear-gradient(135deg, #ede9fe 0%, #c4b5fd 100%);
+  color: #4c1d95;
+}
+
+.status-filter-fees-paid i {
+  background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 100%);
+  color: #065f46;
+}
+
+.status-filter-enrolled i {
+  background: linear-gradient(135deg, #bbf7d0 0%, #4ade80 100%);
+  color: #15803d;
+}
+
+.status-filter-junk i {
+  background: linear-gradient(135deg, #fbcfe8 0%, #f9a8d4 100%);
+  color: #be185d;
+}
+
 /* Leads */
 .lead-card {
   background: #ffffff;
@@ -688,6 +808,48 @@ body {
   margin-top: 8px;
 }
 
+/* Copy icons and buttons */
+.copy-icon {
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.copy-icon:hover {
+  color: #6366f1;
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.copy-all-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.2);
+}
+
+.copy-all-btn:hover {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+  transform: translateY(-1px);
+}
+
+.copy-all-btn:active {
+  transform: translateY(0);
+}
+
 /* Modal */
 .modal {
   position: fixed;
@@ -702,6 +864,8 @@ body {
   justify-content: center;
   backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease;
+  overflow-y: auto;
+  padding: 20px;
 }
 
 @keyframes fadeIn {
@@ -715,12 +879,13 @@ body {
   border-radius: 12px;
   max-width: 700px;
   width: 92%;
-  max-height: 90vh;
+  max-height: calc(100vh - 40px);
   overflow-y: auto;
   position: relative;
   box-shadow: 0 20px 25px rgba(0,0,0,0.15);
   border: 1px solid #e5e7eb;
   animation: slideUp 0.2s ease;
+  margin: auto;
 }
 
 @keyframes slideUp {

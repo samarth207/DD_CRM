@@ -7,6 +7,19 @@ const BASE_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:5000' 
   : window.location.origin;
 
+// Register Service Worker for offline support and caching
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('ServiceWorker registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('ServiceWorker registration failed:', error);
+      });
+  });
+}
+
 function getToken() {
   return localStorage.getItem('token');
 }
@@ -29,6 +42,61 @@ function clearAuth() {
 function logout() {
   clearAuth();
   window.location.href = 'index.html';
+}
+
+// Debounce function for performance optimization
+function debounce(func, wait = 300) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Throttle function for scroll/resize events
+function throttle(func, wait = 100) {
+  let timeout;
+  let lastRan;
+  return function executedFunction(...args) {
+    if (!lastRan) {
+      func(...args);
+      lastRan = Date.now();
+    } else {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        if ((Date.now() - lastRan) >= wait) {
+          func(...args);
+          lastRan = Date.now();
+        }
+      }, wait - (Date.now() - lastRan));
+    }
+  };
+}
+
+// Simple in-memory cache for API responses
+const apiCache = new Map();
+const CACHE_DURATION = 60000; // 1 minute
+
+function getCachedResponse(key) {
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  apiCache.delete(key);
+  return null;
+}
+
+function setCachedResponse(key, data) {
+  apiCache.set(key, { data, timestamp: Date.now() });
+  // Auto-cleanup old cache entries
+  if (apiCache.size > 100) {
+    const firstKey = apiCache.keys().next().value;
+    apiCache.delete(firstKey);
+  }
 }
 
 async function apiCall(endpoint, options = {}) {

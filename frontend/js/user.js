@@ -1,4 +1,90 @@
 // ===== MODAL AND NOTIFICATION HELPERS =====
+// Live Update Polling System
+let lastCheckTimestamp = Date.now();
+let lastLeadCount = 0; // Track lead count to detect deletions
+let updateCheckInterval = null;
+
+// Start polling for updates
+function startUpdatePolling() {
+  // Check for updates every 15 seconds
+  updateCheckInterval = setInterval(checkForUpdates, 15000);
+  console.log('Live update polling started');
+}
+
+// Stop polling
+function stopUpdatePolling() {
+  if (updateCheckInterval) {
+    clearInterval(updateCheckInterval);
+    updateCheckInterval = null;
+  }
+}
+
+// Check for updates
+async function checkForUpdates() {
+  try {
+    const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
+    
+    if (response && response.ok) {
+      const data = await response.json();
+      if (data.hasUpdates) {
+        const changeType = data.countChanged 
+          ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
+          : 'updated';
+        showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
+        lastCheckTimestamp = data.latestTimestamp;
+        lastLeadCount = data.currentCount;
+      } else {
+        // Update count even if no changes to stay in sync
+        lastLeadCount = data.currentCount;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for updates:', error);
+  }
+}
+
+// Show update notification banner
+function showUpdateNotification(updateCount, changeType = 'updated', countChanged = false) {
+  const banner = document.getElementById('update-notification-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    // Update message with count and type
+    const messageDiv = document.getElementById('update-notification-message');
+    if (messageDiv) {
+      let message = '';
+      if (countChanged) {
+        if (changeType === 'removed') {
+          message = `Lead(s) have been removed by admin. Click to refresh and see the latest changes.`;
+        } else {
+          message = `New lead(s) have been assigned to you. Click to refresh and see them.`;
+        }
+      } else {
+        message = `${updateCount} lead${updateCount > 1 ? 's have' : ' has'} been updated by admin. Click to refresh and see the latest changes.`;
+      }
+      messageDiv.textContent = message;
+    }
+  }
+}
+
+// Dismiss update notification
+function dismissUpdateNotification() {
+  const banner = document.getElementById('update-notification-banner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+  // Reset timestamp to current time to avoid showing the same notification again
+  lastCheckTimestamp = Date.now();
+}
+
+// Refresh user data
+function refreshUserData() {
+  dismissUpdateNotification();
+  // Reload leads data
+  currentPage = 1;
+  loadLeads();
+  showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
+}
+
 // Show loading overlay
 function showLoading(message = 'Processing...', submessage = 'Please wait') {
   document.getElementById('loading-message').textContent = message;
@@ -332,6 +418,9 @@ if (!user || user.role !== 'user') {
   window.location.href = 'index.html';
 }
 
+// Store current user ID for filtering
+window.currentUserId = user.id || user._id;
+
 let allLeads = [];
 let currentLead = null;
 
@@ -394,6 +483,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Load leads after DOM is ready
   loadLeads();
+  
+  // Start live update polling
+  startUpdatePolling();
+  
+  // Wire up update notification buttons
+  const refreshBtn = document.getElementById('refresh-data-btn');
+  const dismissBtn = document.getElementById('dismiss-notification-btn');
+  
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshUserData);
+  }
+  
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', dismissUpdateNotification);
+  }
 });
 
 async function loadLeads() {
@@ -404,7 +508,9 @@ async function loadLeads() {
     
     if (response.ok) {
       allLeads = data.leads || data; // Support both new and old format
+      lastLeadCount = allLeads.length; // Update count for change detection
       updateStats();
+      updateStatusCounts(); // Update status filter counts
       displayLeads();
       // Start reminder system after leads are loaded
       startReminderSystem();
@@ -415,24 +521,7 @@ async function loadLeads() {
 }
 
 function updateStats() {
-  const stats = {
-    total: allLeads.length,
-    fresh: 0,
-    followup: 0,
-    enrolled: 0
-  };
-  
-  allLeads.forEach(lead => {
-    if (lead.status === 'Fresh') stats.fresh++;
-    if (lead.status === 'Follow up') stats.followup++;
-    if (lead.status === 'Enrolled') stats.enrolled++;
-  });
-  
-  document.getElementById('stat-total').textContent = stats.total;
-  document.getElementById('stat-new').textContent = stats.fresh;
-  document.getElementById('stat-hot').textContent = stats.followup;
-  document.getElementById('stat-closed').textContent = stats.enrolled;
-  
+  // Stats cards removed, only update analytics
   updateAnalytics();
 }
 
@@ -500,9 +589,53 @@ function updateAnalytics() {
   // Recent activity section removed - only dashboard activity needed
 }
 
+// Update status filter counts
+function updateStatusCounts() {
+  if (!allLeads) return;
+  
+  const statusCounts = {
+    all: allLeads.length,
+    'Fresh': 0,
+    'Buffer fresh': 0,
+    'Did not pick': 0,
+    'Request call back': 0,
+    'Follow up': 0,
+    'Counselled': 0,
+    'Interested in next batch': 0,
+    'Registration fees paid': 0,
+    'Enrolled': 0,
+    'Junk/not interested': 0
+  };
+  
+  allLeads.forEach(lead => {
+    if (statusCounts[lead.status] !== undefined) {
+      statusCounts[lead.status]++;
+    }
+  });
+  
+  // Update count elements
+  const countEl = (id) => document.getElementById(`count-${id}`);
+  if (countEl('all')) countEl('all').textContent = statusCounts.all;
+  if (countEl('fresh')) countEl('fresh').textContent = statusCounts['Fresh'];
+  if (countEl('buffer-fresh')) countEl('buffer-fresh').textContent = statusCounts['Buffer fresh'];
+  if (countEl('did-not-pick')) countEl('did-not-pick').textContent = statusCounts['Did not pick'];
+  if (countEl('request-call-back')) countEl('request-call-back').textContent = statusCounts['Request call back'];
+  if (countEl('follow-up')) countEl('follow-up').textContent = statusCounts['Follow up'];
+  if (countEl('counselled')) countEl('counselled').textContent = statusCounts['Counselled'];
+  if (countEl('interested')) countEl('interested').textContent = statusCounts['Interested in next batch'];
+  if (countEl('fees-paid')) countEl('fees-paid').textContent = statusCounts['Registration fees paid'];
+  if (countEl('enrolled')) countEl('enrolled').textContent = statusCounts['Enrolled'];
+  if (countEl('junk')) countEl('junk').textContent = statusCounts['Junk/not interested'];
+}
+
 function displayLeads() {
   const filterStatus = document.getElementById('filter-status').value;
   const filterSearch = document.getElementById('filter-search').value.toLowerCase();
+  const filterDate = document.getElementById('filter-date').value;
+  const filterCustomDate = document.getElementById('filter-custom-date').value;
+  
+  // Update status counts
+  updateStatusCounts();
   
   const filteredLeads = allLeads.filter(lead => {
     const matchesStatus = !filterStatus || lead.status === filterStatus;
@@ -515,7 +648,26 @@ function displayLeads() {
       (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
       (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
-    return matchesStatus && matchesSearch;
+    // Date filtering based on assignment history
+    let matchesDate = true;
+    if (filterDate && lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+      // Get the most recent assignment date for this user
+      const userAssignments = lead.assignmentHistory.filter(h => 
+        h.toUser && (h.toUser._id === window.currentUserId || h.toUser === window.currentUserId)
+      );
+      
+      if (userAssignments.length > 0) {
+        const lastAssignment = userAssignments[userAssignments.length - 1];
+        const assignmentDate = new Date(lastAssignment.changedAt || lead.createdAt);
+        matchesDate = checkDateMatch(assignmentDate, filterDate, filterCustomDate);
+      } else {
+        // Fallback to createdAt if no assignment history
+        const createdDate = new Date(lead.createdAt);
+        matchesDate = checkDateMatch(createdDate, filterDate, filterCustomDate);
+      }
+    }
+    
+    return matchesStatus && matchesSearch && matchesDate;
   });
   
   const container = document.getElementById('leads-container');
@@ -549,16 +701,37 @@ function displayLeads() {
   leadsToShow.forEach(lead => {
     const leadCard = document.createElement('div');
     leadCard.className = 'lead-card';
-    leadCard.onclick = () => openLeadModal(lead);
+    leadCard.onclick = (e) => {
+      // Don't open modal if clicking copy buttons
+      if (e.target.closest('.copy-icon') || e.target.closest('.copy-all-btn')) {
+        e.stopPropagation();
+        return;
+      }
+      openLeadModal(lead);
+    };
+    
+    // Escape quotes in lead data for inline JSON
+    const leadJson = JSON.stringify(lead).replace(/"/g, '&quot;');
     
     leadCard.innerHTML = `
       <div class="lead-header">
         <div class="lead-name">${lead.name}</div>
-        <span class="lead-status status-${(lead.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${lead.status}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="lead-status status-${(lead.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${lead.status}</span>
+          <button class="copy-all-btn" onclick="event.stopPropagation(); copyAllLeadDetails(${leadJson})" title="Copy all details">
+            <i class="fas fa-copy"></i> Copy All
+          </button>
+        </div>
       </div>
       <div class="lead-info">
-        <div><strong>Contact:</strong> ${lead.contact || 'N/A'}</div>
-        <div><strong>Email:</strong> ${lead.email || 'N/A'}</div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span><strong>Contact:</strong> ${lead.contact || 'N/A'}</span>
+          ${lead.contact ? `<i class="fas fa-copy copy-icon" onclick="event.stopPropagation(); copyToClipboard('${lead.contact}', 'Contact')" title="Copy contact"></i>` : ''}
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span><strong>Email:</strong> ${lead.email || 'N/A'}</span>
+          ${lead.email ? `<i class="fas fa-copy copy-icon" onclick="event.stopPropagation(); copyToClipboard('${lead.email}', 'Email')" title="Copy email"></i>` : ''}
+        </div>
         <div><strong>City:</strong> ${lead.city || 'N/A'}</div>
         <div><strong>University:</strong> ${lead.university || 'N/A'}</div>
         <div><strong>Course:</strong> ${lead.course || 'N/A'}</div>
@@ -801,11 +974,58 @@ function quickFilter(status) {
   });
 }
 
+// Date matching helper function
+function checkDateMatch(date, filterType, customDate) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const compareDate = new Date(date);
+  compareDate.setHours(0, 0, 0, 0);
+  
+  switch (filterType) {
+    case 'today':
+      return compareDate.getTime() === today.getTime();
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return compareDate.getTime() === yesterday.getTime();
+    
+    case 'thisweek':
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay());
+      return compareDate >= weekStart && compareDate <= today;
+    
+    case 'lastweek':
+      const lastWeekEnd = new Date(today);
+      lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+      return compareDate >= lastWeekStart && compareDate <= lastWeekEnd;
+    
+    case 'thismonth':
+      return compareDate.getMonth() === today.getMonth() && 
+             compareDate.getFullYear() === today.getFullYear();
+    
+    case 'custom':
+      if (!customDate) return true;
+      const customCompare = new Date(customDate);
+      customCompare.setHours(0, 0, 0, 0);
+      return compareDate.getTime() === customCompare.getTime();
+    
+    default:
+      return true;
+  }
+}
+
 // Clear filters function
 function clearFilters() {
   window.currentLeadsPage = 1; // Reset pagination
   document.getElementById('filter-status').value = '';
   document.getElementById('filter-search').value = '';
+  document.getElementById('filter-date').value = '';
+  document.getElementById('filter-custom-date').style.display = 'none';
+  document.getElementById('filter-custom-date').value = '';
   displayLeads();
 }
 
@@ -1159,6 +1379,26 @@ document.getElementById('filter-status').addEventListener('change', () => {
   window.currentLeadsPage = 1; // Reset pagination on filter change
   displayLeads();
 });
+
+// Date filter event listener
+document.getElementById('filter-date').addEventListener('change', (e) => {
+  const customDateInput = document.getElementById('filter-custom-date');
+  if (e.target.value === 'custom') {
+    customDateInput.style.display = 'block';
+  } else {
+    customDateInput.style.display = 'none';
+    customDateInput.value = '';
+  }
+  window.currentLeadsPage = 1;
+  displayLeads();
+});
+
+// Custom date input event listener
+document.getElementById('filter-custom-date').addEventListener('change', () => {
+  window.currentLeadsPage = 1;
+  displayLeads();
+});
+
 // Debounced search to avoid excessive re-renders
 document.getElementById('filter-search').addEventListener('input', debounce(() => {
   window.currentLeadsPage = 1; // Reset pagination on search
@@ -1743,6 +1983,8 @@ window.addEventListener('beforeunload', () => {
   if (reminderCheckInterval) {
     clearInterval(reminderCheckInterval);
   }
+  // Stop update polling
+  stopUpdatePolling();
 });
 
 // Function to display brochures in modal
@@ -1891,3 +2133,81 @@ function toggleBrochureSection() {
     icon.style.transform = 'rotate(0deg)';
   }
 }
+
+// Copy to clipboard functionality
+function copyToClipboard(text, label) {
+  navigator.clipboard.writeText(text).then(() => {
+    showCopyToast(`${label} copied!`);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showCopyToast('Failed to copy', 'error');
+  });
+}
+
+// Copy all lead details
+function copyAllLeadDetails(lead) {
+  const details = `Name: ${lead.name}
+Contact: ${lead.contact || 'N/A'}
+Email: ${lead.email || 'N/A'}
+City: ${lead.city || 'N/A'}
+University: ${lead.university || 'N/A'}
+Course: ${lead.course || 'N/A'}
+Profession: ${lead.profession || 'N/A'}
+Source: ${lead.source || 'Other'}
+Status: ${lead.status || 'N/A'}`;
+  
+  navigator.clipboard.writeText(details).then(() => {
+    showCopyToast('All details copied!');
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showCopyToast('Failed to copy', 'error');
+  });
+}
+
+// Simple toast for copy notifications
+function showCopyToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: ${type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'};
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: slideInRight 0.3s ease;
+  `;
+  toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>${message}`;
+  
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    toast.style.transition = 'all 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+// Add CSS animation
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(style);

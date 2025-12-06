@@ -8,6 +8,7 @@ const User = require('../models/User');
 const Brochure = require('../models/Brochure');
 const { auth, adminAuth } = require('../middleware/auth');
 const { mapExcelRowToLead, getMappingSummary } = require('../utils/excelFieldMapper');
+const adminCache = require('../utils/cache');
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 function invalidateBrochuresCache() {
   brochuresCache = null;
   brochuresCacheTime = null;
+  adminCache.invalidate('brochures');
 }
 
 // Configure multer for file upload
@@ -661,6 +663,7 @@ router.put('/lead/:id', auth, adminAuth, async (req, res) => {
     }
     
     lead.lastContactDate = new Date();
+    lead.updatedAt = new Date(); // Explicitly set to ensure notifications work
     await lead.save();
     
     // Return populated lead for display
@@ -749,7 +752,7 @@ router.put('/lead/:id/field', auth, adminAuth, async (req, res) => {
 router.patch('/transfer-lead/:leadId', auth, adminAuth, async (req, res) => {
   try {
     const { leadId } = req.params;
-    const { newUserId } = req.body;
+    const { newUserId, note } = req.body;
 
     if (!newUserId) {
       return res.status(400).json({ message: 'newUserId is required' });
@@ -768,12 +771,17 @@ router.patch('/transfer-lead/:leadId', auth, adminAuth, async (req, res) => {
     // Update assignment
     const previousUser = lead.assignedTo;
     lead.assignedTo = newUserId;
-    // Preserve status in statusHistory for audit trail
-    lead.statusHistory.push({
-      status: lead.status,
-      changedBy: req.userId,
-      changedAt: new Date()
-    });
+    
+    // Add transfer note if provided
+    if (note && note.trim()) {
+      lead.notes = lead.notes || [];
+      lead.notes.push({
+        content: `[Transfer Note] ${note.trim()}`,
+        createdBy: req.userId,
+        createdAt: new Date()
+      });
+    }
+    
     // Log assignment change
     lead.assignmentHistory = lead.assignmentHistory || [];
     lead.assignmentHistory.push({
@@ -783,6 +791,9 @@ router.patch('/transfer-lead/:leadId', auth, adminAuth, async (req, res) => {
       changedBy: req.userId,
       changedAt: new Date()
     });
+    
+    // Explicitly set updatedAt to ensure notifications work
+    lead.updatedAt = new Date();
     await lead.save();
 
     res.json({ message: 'Lead transferred successfully', leadId: lead._id, newAssignedTo: newUserId });
@@ -988,6 +999,13 @@ router.post('/create-lead', auth, adminAuth, async (req, res) => {
       createdBy: req.userId,
       statusHistory: [{
         status: initialStatus,
+        changedAt: new Date(),
+        changedBy: req.userId
+      }],
+      assignmentHistory: [{
+        action: 'assigned',
+        fromUser: null,
+        toUser: assignedTo,
         changedAt: new Date(),
         changedBy: req.userId
       }]
