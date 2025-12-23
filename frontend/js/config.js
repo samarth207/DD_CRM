@@ -110,23 +110,16 @@ async function apiCall(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers
-    });
-    
-    // Only auto-logout on 401 for critical endpoints, not background polling
-    if (response.status === 401 && !endpoint.includes('check-updates')) {
-      console.warn('Authentication failed, redirecting to login');
-      clearAuth();
-      window.location.href = 'index.html';
-      return response;
-    }
-    
-    return response;
-  } catch (error) {
-    console.error('API call failed:', endpoint, error);
-    throw error;
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers
+  });
+  
+  if (response.status === 401) {
+    clearAuth();
+    window.location.href = 'index.html';
+    return;
   }
+  
+  return response;
 }

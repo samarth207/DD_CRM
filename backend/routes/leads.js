@@ -72,16 +72,27 @@ router.get('/check-updates', auth, async (req, res) => {
       assignedTo: req.userId
     });
     
-    // Check if any leads were updated or created after lastCheck
+    // Only check for leads updated by OTHERS (admin), not by the user themselves
+    // This prevents self-triggering notifications when user edits their own leads
     const updatedOrNewLeads = await Lead.countDocuments({
       assignedTo: req.userId,
-      $or: [
-        { updatedAt: { $gt: lastCheck } },
-        { createdAt: { $gt: lastCheck } }
+      $and: [
+        {
+          $or: [
+            { updatedAt: { $gt: lastCheck } },
+            { createdAt: { $gt: lastCheck } }
+          ]
+        },
+        {
+          $or: [
+            { lastUpdatedBy: { $ne: req.userId } }, // Updated by someone else
+            { lastUpdatedBy: { $exists: false } } // New lead without update history
+          ]
+        }
       ]
     });
     
-    // Detect changes: count changed (deletion) OR leads were updated/created
+    // Detect changes: count changed (deletion/addition) OR leads were updated by others
     const countChanged = lastCount > 0 && currentCount !== lastCount;
     const hasUpdates = countChanged || updatedOrNewLeads > 0;
     
@@ -164,6 +175,7 @@ router.put('/:id', auth, async (req, res) => {
     }
     
     lead.lastContactDate = new Date();
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     res.json(lead);
   } catch (error) {
@@ -193,6 +205,7 @@ router.put('/:id/field', auth, async (req, res) => {
       lead.course = course;
     }
     
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     res.json(lead);
   } catch (error) {
@@ -225,6 +238,7 @@ router.post('/:id/notes', auth, async (req, res) => {
     });
     
     lead.lastContactDate = new Date();
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     
     res.json(lead);

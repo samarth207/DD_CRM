@@ -6,13 +6,6 @@ let updateCheckInterval = null;
 
 // Start polling for updates
 function startUpdatePolling() {
-  // Only start polling for regular users, not for admins using user dashboard
-  const currentUser = getUser();
-  if (!currentUser || currentUser.role === 'admin') {
-    console.log('Update polling disabled for admin users');
-    return;
-  }
-  
   // Check for updates every 15 seconds
   updateCheckInterval = setInterval(checkForUpdates, 15000);
   console.log('Live update polling started');
@@ -23,53 +16,40 @@ function stopUpdatePolling() {
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
-    console.log('Update polling stopped');
   }
 }
-
-// Stop polling when page is hidden or user navigates away
-window.addEventListener('beforeunload', stopUpdatePolling);
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopUpdatePolling();
-  } else {
-    // Restart polling when page becomes visible again (only for regular users)
-    const currentUser = getUser();
-    if (currentUser && currentUser.role !== 'admin' && !updateCheckInterval) {
-      startUpdatePolling();
-    }
-  }
-});
 
 // Check for updates
 async function checkForUpdates() {
   try {
-    const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
-    
-    // Silently fail if request fails (e.g., network error, 401)
-    if (!response || !response.ok) {
-      // If 401, polling will stop via stopUpdatePolling in apiCall
-      if (response && response.status === 401) {
-        stopUpdatePolling();
-      }
-      return;
+    // Don't check for updates if a modal is open (user is editing)
+    const leadModal = document.getElementById('lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      return; // Skip this check, user is actively editing
     }
     
-    const data = await response.json();
-    if (data.hasUpdates) {
-      const changeType = data.countChanged 
-        ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
-        : 'updated';
-      showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
-      lastCheckTimestamp = data.latestTimestamp;
-      lastLeadCount = data.currentCount;
-    } else {
-      // Update count even if no changes to stay in sync
-      lastLeadCount = data.currentCount;
+    const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
+    
+    // Handle auth errors - apiCall will redirect
+    if (!response) return;
+    
+    if (response && response.ok) {
+      const data = await response.json();
+      if (data.hasUpdates) {
+        const changeType = data.countChanged 
+          ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
+          : 'updated';
+        showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
+        lastCheckTimestamp = data.latestTimestamp;
+        lastLeadCount = data.currentCount;
+      } else {
+        // Update count even if no changes to stay in sync
+        lastLeadCount = data.currentCount;
+      }
     }
   } catch (error) {
     console.error('Error checking for updates:', error);
-    // Don't stop polling on network errors, just log and continue
+    // Don't show error toast for background polling failures
   }
 }
 
@@ -109,28 +89,10 @@ function dismissUpdateNotification() {
 // Refresh user data
 function refreshUserData() {
   dismissUpdateNotification();
-  
-  // Save current modal state
-  const leadModal = document.getElementById('lead-modal');
-  const wasModalOpen = leadModal && leadModal.style.display === 'flex';
-  const currentLeadId = wasModalOpen && currentLead ? currentLead._id : null;
-  
-  // Reload leads data while preserving current page
-  const savedPage = currentPage;
-  loadLeads().then(() => {
-    // Restore page
-    currentPage = savedPage;
-    
-    // If modal was open, try to reopen the same lead
-    if (wasModalOpen && currentLeadId && allLeads) {
-      const lead = allLeads.find(l => l._id === currentLeadId);
-      if (lead) {
-        openLeadModal(lead);
-      }
-    }
-    
-    showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
-  });
+  // Reload leads data
+  currentPage = 1;
+  loadLeads();
+  showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
 }
 
 // Show loading overlay
@@ -818,6 +780,10 @@ async function loadLeads() {
   try {
     // Load all leads without pagination for stats (limit set high)
     const response = await apiCall('/leads?limit=10000');
+    
+    // Handle auth errors separately - apiCall will redirect
+    if (!response) return;
+    
     const data = await response.json();
     
     if (response.ok) {
@@ -829,9 +795,13 @@ async function loadLeads() {
       displayLeads();
       // Start reminder system after leads are loaded
       startReminderSystem();
+    } else {
+      console.error('Error loading leads:', data.message);
+      showToast('Error', data.message || 'Failed to load leads', 'error');
     }
   } catch (error) {
     console.error('Error loading leads:', error);
+    showToast('Network Error', 'Failed to load leads. Please check your connection.', 'error');
   }
 }
 
