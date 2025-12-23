@@ -609,8 +609,46 @@ function updateAnalytics() {
 function updateStatusCounts() {
   if (!allLeads) return;
   
+  // Get filtered leads using the same logic as displayLeads
+  const filterStatus = document.getElementById('filter-status').value;
+  const filterSearch = document.getElementById('filter-search').value.toLowerCase();
+  const filterSource = document.getElementById('filter-source').value;
+  const filterDate = document.getElementById('filter-date').value;
+  const filterCustomDate = document.getElementById('filter-custom-date').value;
+  
+  const filteredLeads = allLeads.filter(lead => {
+    const matchesSource = !filterSource || (lead.source || 'Other') === filterSource;
+    const matchesSearch = !filterSearch || 
+      (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
+      (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
+      (lead.city && lead.city.toLowerCase().includes(filterSearch)) ||
+      (lead.university && lead.university.toLowerCase().includes(filterSearch)) ||
+      (lead.course && lead.course.toLowerCase().includes(filterSearch)) ||
+      (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
+      (lead.source && lead.source.toLowerCase().includes(filterSearch));
+    
+    let matchesDate = true;
+    if (filterDate && lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+      const userAssignments = lead.assignmentHistory.filter(h => 
+        h.toUser && (h.toUser._id === window.currentUserId || h.toUser === window.currentUserId)
+      );
+      
+      if (userAssignments.length > 0) {
+        const lastAssignment = userAssignments[userAssignments.length - 1];
+        const assignmentDate = new Date(lastAssignment.changedAt || lead.createdAt);
+        matchesDate = checkDateMatch(assignmentDate, filterDate, filterCustomDate);
+      } else {
+        const createdDate = new Date(lead.createdAt);
+        matchesDate = checkDateMatch(createdDate, filterDate, filterCustomDate);
+      }
+    }
+    
+    const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
+    return matchesSource && matchesSearch && matchesDate && matchesNoAction;
+  });
+  
   const statusCounts = {
-    all: allLeads.length,
+    all: filteredLeads.length,
     'Fresh': 0,
     'Buffer fresh': 0,
     'Did not pick': 0,
@@ -623,7 +661,7 @@ function updateStatusCounts() {
     'Junk/not interested': 0
   };
   
-  allLeads.forEach(lead => {
+  filteredLeads.forEach(lead => {
     if (statusCounts[lead.status] !== undefined) {
       statusCounts[lead.status]++;
     }
@@ -2375,203 +2413,3 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
-// ===== USER LEADS GRAPH FUNCTIONS =====
-let userLeadsChartInstance = null;
-
-function closeUserLeadsGraphModal() {
-  const modal = document.getElementById('user-leads-graph-modal');
-  if (!modal) return;
-  modal.style.display = 'none';
-  
-  // Destroy chart
-  if (userLeadsChartInstance) {
-    userLeadsChartInstance.destroy();
-    userLeadsChartInstance = null;
-  }
-}
-
-function showUserLeadsGraph() {
-  // Get currently filtered leads (same logic as displayLeads)
-  const filterStatus = document.getElementById('filter-status').value;
-  const filterSearch = document.getElementById('filter-search').value.toLowerCase();
-  const filterSource = document.getElementById('filter-source').value;
-  const filterDate = document.getElementById('filter-date').value;
-  const filterCustomDate = document.getElementById('filter-custom-date').value;
-  
-  const filteredLeads = allLeads.filter(lead => {
-    const matchesStatus = !filterStatus || lead.status === filterStatus;
-    const matchesSource = !filterSource || (lead.source || 'Other') === filterSource;
-    const matchesSearch = !filterSearch || 
-      (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
-      (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
-      (lead.city && lead.city.toLowerCase().includes(filterSearch)) ||
-      (lead.university && lead.university.toLowerCase().includes(filterSearch)) ||
-      (lead.course && lead.course.toLowerCase().includes(filterSearch)) ||
-      (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
-      (lead.source && lead.source.toLowerCase().includes(filterSearch));
-    
-    let matchesDate = true;
-    if (filterDate && lead.assignmentHistory && lead.assignmentHistory.length > 0) {
-      const userAssignments = lead.assignmentHistory.filter(h => 
-        h.toUser && (h.toUser._id === window.currentUserId || h.toUser === window.currentUserId)
-      );
-      
-      if (userAssignments.length > 0) {
-        const lastAssignment = userAssignments[userAssignments.length - 1];
-        const assignmentDate = new Date(lastAssignment.changedAt || lead.createdAt);
-        matchesDate = checkDateMatch(assignmentDate, filterDate, filterCustomDate);
-      } else {
-        matchesDate = false;
-      }
-    }
-    
-    // Include no action filter check
-    const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
-    
-    return matchesStatus && matchesSource && matchesSearch && matchesDate && matchesNoAction;
-  });
-  
-  if (filteredLeads.length === 0) {
-    showToast('No Data', 'No leads found with current filters', 'warning');
-    return;
-  }
-  
-  // Count by status
-  const statusCounts = {};
-  filteredLeads.forEach(lead => {
-    const status = lead.status || 'Unknown';
-    statusCounts[status] = (statusCounts[status] || 0) + 1;
-  });
-  
-  // Sort by count
-  const sortedStatuses = Object.entries(statusCounts)
-    .sort((a, b) => b[1] - a[1])
-    .reduce((acc, [status, count]) => {
-      acc[status] = count;
-      return acc;
-    }, {});
-  
-  const labels = Object.keys(sortedStatuses);
-  const data = Object.values(sortedStatuses);
-  
-  // Color mapping
-  const statusColors = {
-    'Fresh': '#0066cc',
-    'Buffer fresh': '#60a5fa',
-    'Did not pick': '#9ca3af',
-    'Request call back': '#8b5cf6',
-    'Follow up': '#f59e0b',
-    'Counselled': '#22c55e',
-    'Interested in next batch': '#6366f1',
-    'Registration fees paid': '#10b981',
-    'Enrolled': '#2e7d32',
-    'Junk/not interested': '#c2185b',
-    'Unknown': '#9ca3af'
-  };
-  
-  const backgroundColors = labels.map(label => statusColors[label] || '#667eea');
-  
-  // Show modal
-  document.getElementById('user-leads-graph-modal').style.display = 'flex';
-  
-  // Destroy existing chart if any
-  if (userLeadsChartInstance) {
-    userLeadsChartInstance.destroy();
-  }
-  
-  // Create new chart
-  const ctx = document.getElementById('user-leads-chart-modal');
-  if (!ctx) return;
-  
-  userLeadsChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Number of Leads',
-        data: data,
-        backgroundColor: backgroundColors,
-        borderColor: backgroundColors,
-        borderWidth: 1,
-        borderRadius: 6,
-        borderSkipped: false
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: {
-          display: false
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const total = data.reduce((a, b) => a + b, 0);
-              const value = context.parsed.y;
-              const percentage = ((value / total) * 100).toFixed(1);
-              return `${value} leads (${percentage}%)`;
-            }
-          }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: {
-            maxTicksLimit: 8,
-            callback: function(value) {
-              if (value >= 1000) return (value / 1000).toFixed(1) + 'k';
-              return value;
-            }
-          }
-        }
-      }
-    }
-  });
-  
-  // Update summary
-  updateUserGraphSummary(filteredLeads, sortedStatuses);
-}
-
-function updateUserGraphSummary(leads, sortedStatuses) {
-  const statsDiv = document.getElementById('user-graph-stats');
-  if (!statsDiv) return;
-  
-  statsDiv.innerHTML = '';
-  
-  // Total leads
-  const totalDiv = document.createElement('div');
-  totalDiv.style.cssText = 'padding: 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;';
-  totalDiv.innerHTML = `
-    <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Total Leads</div>
-    <div style="font-size: 20px; font-weight: 700; color: #1f2937;">${leads.length}</div>
-  `;
-  statsDiv.appendChild(totalDiv);
-  
-  // Top 3 statuses
-  const topStatuses = Object.entries(sortedStatuses).slice(0, 3);
-  topStatuses.forEach(([status, count]) => {
-    const percentage = ((count / leads.length) * 100).toFixed(1);
-    const statusDiv = document.createElement('div');
-    statusDiv.style.cssText = 'padding: 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;';
-    statusDiv.innerHTML = `
-      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${status}</div>
-      <div style="font-size: 18px; font-weight: 700; color: #1f2937;">${count}</div>
-      <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${percentage}% of total</div>
-    `;
-    statsDiv.appendChild(statusDiv);
-  });
-}
-
-// Add escape key handler for user leads graph modal
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    const userLeadsGraphModal = document.getElementById('user-leads-graph-modal');
-    if (userLeadsGraphModal && userLeadsGraphModal.style.display === 'flex') {
-      closeUserLeadsGraphModal();
-      return;
-    }
-  }
-});
