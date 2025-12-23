@@ -19,11 +19,11 @@
   
   <!-- Optimized resource loading -->
   <link rel="preload" href="css/style.css" as="style">
-  <link rel="preload" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" as="script">
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" as="script" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer crossorigin></script>
 </head>
 <body>
   <!-- Sidebar Navigation -->
@@ -91,7 +91,7 @@
       <!-- Overall Dashboard Section -->
       <div class="card">
         <h2 class="collapsible-header" onclick="toggleOverallDashboard()">
-          Overall Dashboard
+          <span><i class="fas fa-chart-line" style="margin-right: 8px; color: #6366f1;"></i>Overall Dashboard</span>
           <span id="overall-dashboard-toggle" class="collapse-icon">−</span>
         </h2>
         <div id="overall-dashboard-body">
@@ -132,7 +132,7 @@
                 <option value="custom">Custom Range</option>
               </select>
             </div>
-            <div id="overall-custom-date-range" style="display: none; margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+            <div id="overall-custom-date-range" style="display: none; margin-bottom: 12px; gap: 10px; align-items: center;">
               <input type="date" id="overall-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
               <span style="color: #6b7280;">to</span>
               <input type="date" id="overall-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
@@ -151,12 +151,12 @@
 
       <!-- Overall Performance Section -->
       <div class="card" id="overall-performance-card">
-        <h2>Overall Performance</h2>
+        <h2><i class="fas fa-bolt" style="margin-right: 8px; color: #6366f1;"></i>Performance</h2>
         <div id="overall-performance-body">
           <div style="background: white; padding: 18px; border-radius: 8px; border: 1px solid #e5e7eb;">
             <h3 style="text-align: center; color: #047857; margin-bottom: 18px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
               <i class="fas fa-chart-line"></i>
-              Overall Performance Metrics
+              Performance Metrics
             </h3>
             <div style="display: flex; flex-direction: column; gap: 14px;">
               <div style="display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f3f4f6; background: #f9fafb; border-radius: 4px;">
@@ -550,8 +550,8 @@
       </div>
       
       <!-- Upload Leads Section -->
-      <div class="card">
-        <h2>Upload Leads</h2>
+      <div class="card" id="upload-leads-card">
+        <h2><i class="fas fa-upload" style="margin-right: 8px; color: #6366f1;"></i>Upload Leads</h2>
         <form id="upload-form" enctype="multipart/form-data">
           <div class="form-group">
             <label>Assign to Users</label>
@@ -590,9 +590,9 @@
       </div>
 
       <!-- User Progress Section -->
-      <div class="card">
+      <div class="card" id="user-progress-card">
         <h2 class="collapsible-header" onclick="toggleUserProgress()">
-          User Progress
+          <span><i class="fas fa-chart-bar" style="margin-right: 8px; color: #6366f1;"></i>User Progress</span>
           <span id="user-progress-toggle" class="collapse-icon">-</span>
         </h2>
         <div id="user-progress-body" style="display:block;">
@@ -620,7 +620,7 @@
                 <option value="custom">Custom Range</option>
               </select>
             </div>
-            <div id="user-custom-date-range" style="display: none; margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+            <div id="user-custom-date-range" style="display: none; margin-bottom: 12px; gap: 10px; align-items: center;">
               <input type="date" id="user-start-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
               <span style="color: #6b7280;">to</span>
               <input type="date" id="user-end-date" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;">
@@ -709,7 +709,7 @@
       <!-- Manage Brochures Section -->
       <div class="card" id="manage-brochures-card">
         <h2 style="display:flex; justify-content:space-between; align-items:center;">
-          <span><i class="fas fa-file-pdf" style="margin-right: 8px; color: #e11d48;"></i>Manage Brochures</span>
+          <span><i class="fas fa-file-pdf" style="margin-right: 8px; color: #e11d48;"></i>Brochures</span>
           <button onclick="openAddBrochureModal()" class="btn btn-primary" style="font-size: 13px;">
             <i class="fas fa-plus"></i> Add Brochure
           </button>
