@@ -106,22 +106,4 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Mark tutorial as complete
-router.patch('/complete-tutorial', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    
-    user.hasSeenTutorial = true;
-    await user.save();
-    
-    res.json({ message: 'Tutorial marked as complete', hasSeenTutorial: true });
-  } catch (error) {
-    console.error('Error marking tutorial complete:', error);
-    res.status(500).json({ message: 'Error updating tutorial status' });
-  }
-});
-
 module.exports = router;
