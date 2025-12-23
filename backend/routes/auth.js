@@ -96,11 +96,30 @@ router.post('/login', async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        hasSeenTutorial: user.hasSeenTutorial || false
       }
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Mark tutorial as complete
+router.patch('/complete-tutorial', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    user.hasSeenTutorial = true;
+    await user.save();
+    
+    res.json({ message: 'Tutorial marked as complete', hasSeenTutorial: true });
+  } catch (error) {
+    console.error('Error marking tutorial complete:', error);
+    res.status(500).json({ message: 'Error updating tutorial status' });
   }
 });
 
