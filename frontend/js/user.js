@@ -423,6 +423,8 @@ window.currentUserId = user.id || user._id;
 
 let allLeads = [];
 let currentLead = null;
+let userNoActionFilterActive = false;
+let userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
 
 // Initialize everything after DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -498,6 +500,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (dismissBtn) {
     dismissBtn.addEventListener('click', dismissUpdateNotification);
   }
+
+  // No-action period change handler
+  const userNoActionPeriod = document.getElementById('user-no-action-period');
+  if (userNoActionPeriod) {
+    userNoActionPeriod.addEventListener('change', () => {
+      const customDates = document.getElementById('user-no-action-custom-dates');
+      if (userNoActionPeriod.value === 'custom') {
+        customDates.style.display = 'flex';
+      } else {
+        customDates.style.display = 'none';
+      }
+    });
+  }
 });
 
 async function loadLeads() {
@@ -509,6 +524,7 @@ async function loadLeads() {
     if (response.ok) {
       allLeads = data.leads || data; // Support both new and old format
       lastLeadCount = allLeads.length; // Update count for change detection
+      populateSourceFilter(allLeads);
       updateStats();
       updateStatusCounts(); // Update status filter counts
       displayLeads();
@@ -628,9 +644,29 @@ function updateStatusCounts() {
   if (countEl('junk')) countEl('junk').textContent = statusCounts['Junk/not interested'];
 }
 
+// Populate source filter options dynamically
+function populateSourceFilter(leads) {
+  const sourceSelect = document.getElementById('filter-source');
+  if (!sourceSelect || !Array.isArray(leads)) return;
+  const sources = [...new Set(leads.map(l => l.source || 'Other'))].sort();
+  const currentValue = sourceSelect.value;
+  sourceSelect.innerHTML = '<option value="">All Sources</option>';
+  sources.forEach(src => {
+    const option = document.createElement('option');
+    option.value = src;
+    option.textContent = src;
+    sourceSelect.appendChild(option);
+  });
+  // Preserve selection if still valid
+  if (sources.includes(currentValue)) {
+    sourceSelect.value = currentValue;
+  }
+}
+
 function displayLeads() {
   const filterStatus = document.getElementById('filter-status').value;
   const filterSearch = document.getElementById('filter-search').value.toLowerCase();
+  const filterSource = document.getElementById('filter-source').value;
   const filterDate = document.getElementById('filter-date').value;
   const filterCustomDate = document.getElementById('filter-custom-date').value;
   
@@ -639,6 +675,7 @@ function displayLeads() {
   
   const filteredLeads = allLeads.filter(lead => {
     const matchesStatus = !filterStatus || lead.status === filterStatus;
+    const matchesSource = !filterSource || (lead.source || 'Other') === filterSource;
     const matchesSearch = !filterSearch || 
       (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
       (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
@@ -667,7 +704,8 @@ function displayLeads() {
       }
     }
     
-    return matchesStatus && matchesSearch && matchesDate;
+    const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
+    return matchesStatus && matchesSource && matchesSearch && matchesDate && matchesNoAction;
   });
   
   const container = document.getElementById('leads-container');
@@ -910,7 +948,12 @@ async function openLeadModal(lead) {
   // Display next call date if exists
   displayFollowUpSchedule(lead.nextCallDateTime);
   
-  document.getElementById('lead-modal').style.display = 'flex';
+  const leadModal = document.getElementById('lead-modal');
+  leadModal.style.display = 'flex';
+  // Trigger slide-in animation on next frame
+  requestAnimationFrame(() => {
+    leadModal.classList.add('open');
+  });
 }
 
 function displayFollowUpSchedule(nextCallDateTime) {
@@ -936,10 +979,20 @@ function displayFollowUpSchedule(nextCallDateTime) {
 }
 
 function closeModal() {
-  document.getElementById('lead-modal').style.display = 'none';
-  document.getElementById('quick-update-note').value = '';
-  document.getElementById('modal-lead-status').value = '';
-  currentLead = null;
+  const leadModal = document.getElementById('lead-modal');
+  if (!leadModal) return;
+  // Start slide-out
+  leadModal.classList.remove('open');
+  // After transition, hide and reset fields
+  const HIDE_DELAY = 300;
+  setTimeout(() => {
+    leadModal.style.display = 'none';
+    const noteEl = document.getElementById('quick-update-note');
+    const statusEl = document.getElementById('modal-lead-status');
+    if (noteEl) noteEl.value = '';
+    if (statusEl) statusEl.value = '';
+    currentLead = null;
+  }, HIDE_DELAY);
 }
 
 // Global escape key handler for modal
@@ -1022,10 +1075,12 @@ function checkDateMatch(date, filterType, customDate) {
 function clearFilters() {
   window.currentLeadsPage = 1; // Reset pagination
   document.getElementById('filter-status').value = '';
+  document.getElementById('filter-source').value = '';
   document.getElementById('filter-search').value = '';
   document.getElementById('filter-date').value = '';
   document.getElementById('filter-custom-date').style.display = 'none';
   document.getElementById('filter-custom-date').value = '';
+  clearUserNoActionFilter(false);
   displayLeads();
 }
 
@@ -1208,6 +1263,8 @@ async function quickUpdateLead() {
       if (dateTimeValue) updates.push('schedule');
       
       showToast('Success', `Lead updated successfully! (${updates.join(', ')})`, 'success');
+      // Close the modal after successful update
+      closeModal();
       
       // Start checking for this reminder if scheduled
       if (dateTimeValue) {
@@ -1380,6 +1437,11 @@ document.getElementById('filter-status').addEventListener('change', () => {
   displayLeads();
 });
 
+document.getElementById('filter-source').addEventListener('change', () => {
+  window.currentLeadsPage = 1;
+  displayLeads();
+});
+
 // Date filter event listener
 document.getElementById('filter-date').addEventListener('change', (e) => {
   const customDateInput = document.getElementById('filter-custom-date');
@@ -1398,6 +1460,108 @@ document.getElementById('filter-custom-date').addEventListener('change', () => {
   window.currentLeadsPage = 1;
   displayLeads();
 });
+
+// User no action filter controls
+function toggleUserNoActionFilter() {
+  const panel = document.getElementById('user-no-action-filter-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function clearUserNoActionFilter(shouldHidePanel = true) {
+  const period = document.getElementById('user-no-action-period');
+  const start = document.getElementById('user-no-action-start-date');
+  const end = document.getElementById('user-no-action-end-date');
+  const customDates = document.getElementById('user-no-action-custom-dates');
+  const status = document.getElementById('user-no-action-filter-status');
+  if (period) period.value = '7';
+  if (start) start.value = '';
+  if (end) end.value = '';
+  if (customDates) customDates.style.display = 'none';
+  if (status) status.innerHTML = '<i class="fas fa-info-circle"></i> Shows leads assigned to you with no status change or note in the selected period.';
+  userNoActionFilterActive = false;
+  userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
+  if (shouldHidePanel) {
+    const panel = document.getElementById('user-no-action-filter-panel');
+    if (panel) panel.style.display = 'none';
+  }
+}
+
+function applyUserNoActionFilter() {
+  const period = document.getElementById('user-no-action-period').value;
+  const status = document.getElementById('user-no-action-filter-status');
+  if (period === 'custom') {
+    const start = document.getElementById('user-no-action-start-date').value;
+    const end = document.getElementById('user-no-action-end-date').value;
+    if (!start || !end) {
+      showToast('Date Required', 'Select both start and end dates', 'warning');
+      return;
+    }
+    if (new Date(start) > new Date(end)) {
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
+      return;
+    }
+    userNoActionFilterConfig = { days: null, startDate: start, endDate: end };
+  } else {
+    userNoActionFilterConfig = { days: parseInt(period, 10), startDate: null, endDate: null };
+  }
+
+  userNoActionFilterActive = true;
+  if (status) {
+    if (userNoActionFilterConfig.days) {
+      const labels = {
+        1: 'last 24 hours',
+        3: 'last 3 days',
+        7: 'last 7 days',
+        15: 'last 15 days',
+        30: 'last 30 days'
+      };
+      status.innerHTML = `<i class="fas fa-check-circle"></i> Showing leads with no activity in the ${labels[userNoActionFilterConfig.days] || userNoActionFilterConfig.days + ' days'}`;
+    } else {
+      status.innerHTML = `<i class="fas fa-check-circle"></i> Showing leads with no activity from ${userNoActionFilterConfig.startDate} to ${userNoActionFilterConfig.endDate}`;
+    }
+  }
+  displayLeads();
+}
+
+function checkUserLeadNoAction(lead, config) {
+  if (!lead) return false;
+  const now = new Date();
+  let startDate;
+  let endDate;
+  if (config.days) {
+    endDate = now;
+    startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - config.days);
+  } else {
+    startDate = new Date(config.startDate);
+    endDate = new Date(config.endDate);
+    endDate.setHours(23, 59, 59, 999);
+  }
+
+  const leadCreated = new Date(lead.createdAt);
+  if (leadCreated > endDate) return false;
+  const effectiveStart = leadCreated > startDate ? leadCreated : startDate;
+
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    for (let i = 1; i < lead.statusHistory.length; i++) {
+      const changeDate = new Date(lead.statusHistory[i].changedAt);
+      if (changeDate >= effectiveStart && changeDate <= endDate) {
+        return false;
+      }
+    }
+  }
+
+  if (lead.notes && lead.notes.length > 0) {
+    for (const note of lead.notes) {
+      const noteDate = new Date(note.createdAt);
+      if (noteDate >= effectiveStart && noteDate <= endDate) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
 // Debounced search to avoid excessive re-renders
 document.getElementById('filter-search').addEventListener('input', debounce(() => {

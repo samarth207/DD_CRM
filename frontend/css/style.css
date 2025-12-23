@@ -893,6 +893,41 @@ body {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* Lead drawer overrides: slide-in left and transparent backdrop */
+#lead-modal {
+  /* Transparent backdrop, no blur */
+  background: transparent !important;
+  backdrop-filter: none !important;
+  /* Left-side drawer layout */
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+#lead-modal .modal-content {
+  height: 100vh;
+  max-height: 100vh;
+  width: 520px;
+  max-width: 90vw;
+  margin: 0;
+  border-radius: 12px 0 0 12px;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.15);
+  animation: none; /* disable center pop animation */
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+#lead-modal.open .modal-content {
+  transform: translateX(0);
+}
+
+@media (max-width: 640px) {
+  #lead-modal .modal-content {
+    width: 100vw;
+    border-radius: 0;
+  }
+}
+
 .close {
   position: absolute;
   right: 16px;
