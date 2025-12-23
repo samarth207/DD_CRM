@@ -970,6 +970,10 @@ body {
     opacity: 1;
   }
 }
+
+/* Responsive modal adjustments */
+@media (max-width: 768px) {
+  #lead-modal .modal-content {
     width: 100vw;
     border-radius: 0;
   }
