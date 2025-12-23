@@ -664,6 +664,7 @@ router.put('/lead/:id', auth, adminAuth, async (req, res) => {
     
     lead.lastContactDate = new Date();
     lead.updatedAt = new Date(); // Explicitly set to ensure notifications work
+    lead.lastUpdatedBy = req.userId; // Track that admin made this update
     await lead.save();
     
     // Return populated lead for display
@@ -715,6 +716,7 @@ router.put('/lead/:id/field', auth, adminAuth, async (req, res) => {
       lead.course = course;
     }
     
+    lead.lastUpdatedBy = req.userId; // Track that admin made this update
     await lead.save();
     
     // Return populated lead for display
