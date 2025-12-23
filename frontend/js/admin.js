@@ -290,7 +290,7 @@ function showSection(section) {
       targetId = 'overall-performance-card';
       break;
     case 'upload':
-      targetId = 'upload-form';
+      targetId = 'upload-leads-card';
       break;
     case 'brochures':
       targetId = 'manage-brochures-card';
@@ -301,17 +301,13 @@ function showSection(section) {
       loadUsers(); // Load users when navigating to settings
       break;
     case 'progress':
-      targetId = 'progress-user-select';
+      targetId = 'user-progress-card';
       // Check if section needs to be expanded
       const progressBody = document.getElementById('user-progress-body');
       if (progressBody && progressBody.style.display === 'none') {
         shouldExpand = true;
         expandFunction = toggleUserProgress;
       }
-      break;
-    case 'settings':
-      targetId = 'settings-card';
-      loadUsers(); // Load users when navigating to settings
       break;
   }
   
@@ -902,9 +898,6 @@ function createOverallStatusChart(statusBreakdown) {
   const ctx = document.getElementById('overallStatusChart');
   if (!ctx) return;
   
-  // Register the custom plugin
-  Chart.register(barDataLabelsPlugin);
-  
   const labels = Object.keys(statusBreakdown);
   const data = Object.values(statusBreakdown);
   
@@ -942,6 +935,7 @@ function createOverallStatusChart(statusBreakdown) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
         barDataLabels: true,
         legend: { display: false },
@@ -953,8 +947,9 @@ function createOverallStatusChart(statusBreakdown) {
       },
       scales: {
         y: { 
-          beginAtZero: true, 
-          ticks: { 
+          beginAtZero: true,
+          ticks: {
+            maxTicksLimit: 8,
             callback: function(value) {
               // Format y-axis labels for readability
               if (value >= 1000000) {
@@ -1072,6 +1067,11 @@ const barDataLabelsPlugin = {
   }
 };
 
+// Register plugin once globally for better performance
+if (typeof Chart !== 'undefined') {
+  Chart.register(barDataLabelsPlugin);
+}
+
 function closeFilteredLeadsGraphModal() {
   document.getElementById('filtered-leads-graph-modal').style.display = 'none';
   if (filteredLeadsChartInstance) {
@@ -1174,6 +1174,7 @@ function openNewUserDistribution(status, sortedStatuses) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         barDataLabels: true,
         legend: {
@@ -1275,9 +1276,6 @@ function updateFilteredUserDistributionSummary(status, sortedUsers) {
 }
 
 function showFilteredLeadsGraph() {
-  // Register the custom plugin
-  Chart.register(barDataLabelsPlugin);
-  
   // Get currently filtered leads
   if (!filteredLeadsData || filteredLeadsData.length === 0) {
     alert('No leads to display. Please check your filters.');
@@ -1348,6 +1346,7 @@ function showFilteredLeadsGraph() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         barDataLabels: true,
         legend: {
@@ -1515,9 +1514,6 @@ async function showStatusDistributionModal(status) {
 function createStatusUserDistributionChart(userStats, status) {
   const ctx = document.getElementById('statusUserDistributionChart');
   if (!ctx) return;
-  
-  // Register the custom plugin
-  Chart.register(barDataLabelsPlugin);
 
   const labels = userStats.map(u => u.name);
   const data = userStats.map(u => u.count);
@@ -1557,6 +1553,7 @@ function createStatusUserDistributionChart(userStats, status) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
         barDataLabels: true,
         legend: { display: false },
@@ -1741,6 +1738,7 @@ function createUserLeadsChart(userStats) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
         legend: {
           display: false
@@ -1790,9 +1788,6 @@ function updateStatusChart(statusBreakdown, allLeads) {
   const ctx = document.getElementById('statusChart');
   if (!ctx) return;
   
-  // Register the custom plugin
-  Chart.register(barDataLabelsPlugin);
-  
   const labels = Object.keys(statusBreakdown);
   const data = Object.values(statusBreakdown);
   
@@ -1836,6 +1831,7 @@ function updateStatusChart(statusBreakdown, allLeads) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
         barDataLabels: true,
         legend: {
