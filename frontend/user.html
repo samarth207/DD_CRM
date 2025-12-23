@@ -55,6 +55,9 @@
           <div class="sidebar-user-role">Sales Rep</div>
         </div>
       </div>
+      <button onclick="startTutorial()" class="btn btn-secondary" style="width: 100%; margin-bottom: 8px; background: rgba(102, 126, 234, 0.1); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.2);">
+        <i class="fas fa-question-circle"></i> Show Tutorial
+      </button>
       <button onclick="logout()" class="btn btn-secondary" style="width: 100%;">
         <i class="fas fa-sign-out-alt"></i> Logout
       </button>
@@ -180,7 +183,7 @@
       </div>
       
       <!-- Status Filter Buttons -->
-      <div class="card" style="margin-bottom: 26px;">
+      <div id="status-filter-section" class="card" style="margin-bottom: 26px;">
         <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
           <i class="fas fa-filter" style="color: #6366f1;"></i>
           Filter by Status
@@ -518,6 +521,52 @@
     </div>
   </div>
   
+  <!-- Welcome Congratulations Modal -->
+  <div id="welcome-modal" class="modal" style="display:none; z-index: 10002; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);" onclick="event.stopPropagation()">
+    <div class="modal-content" style="max-width: 550px; text-align: center; padding: 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+      <div style="font-size: 72px; margin-bottom: 20px; animation: celebrateScale 0.6s ease-out;">
+        🎉
+      </div>
+      <h2 style="margin: 0 0 16px 0; color: #1f2937; font-size: 32px; font-weight: 800;">Welcome to DD CRM!</h2>
+      <p style="font-size: 18px; color: #6b7280; margin-bottom: 8px; font-weight: 600;" id="welcome-user-name">Hello, User!</p>
+      <p style="font-size: 15px; color: #9ca3af; line-height: 1.6; margin-bottom: 28px;">
+        Congratulations on joining our team! We're thrilled to have you on board. 
+        Let's take a quick tour to help you get started with your new dashboard.
+      </p>
+      <button onclick="startTutorial()" class="btn btn-primary" style="padding: 14px 32px; font-size: 16px; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4); width: 100%;">
+        <i class="fas fa-play-circle"></i> Start Tutorial
+      </button>
+      <button onclick="skipTutorial()" class="btn btn-secondary" style="margin-top: 12px; padding: 10px 24px; font-size: 14px; width: 100%;">
+        Skip for now
+      </button>
+    </div>
+  </div>
+
+  <!-- Tutorial Overlay -->
+  <div id="tutorial-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.75); z-index: 9999; backdrop-filter: blur(2px);"></div>
+  
+  <!-- Tutorial Tooltip -->
+  <div id="tutorial-tooltip" style="display: none; position: fixed; z-index: 10001; background: white; border-radius: 12px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.3); max-width: 400px; animation: tooltipFadeIn 0.3s ease;">
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+        <span id="tutorial-step-indicator">Step 1 of 7</span>
+      </div>
+      <button onclick="endTutorial()" style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 18px; padding: 0; line-height: 1;" title="Skip Tutorial">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <h3 id="tutorial-title" style="margin: 0 0 12px 0; color: #1f2937; font-size: 20px; font-weight: 700;">Title</h3>
+    <p id="tutorial-description" style="margin: 0 0 20px 0; color: #6b7280; font-size: 14px; line-height: 1.6;">Description</p>
+    <div style="display: flex; gap: 12px;">
+      <button id="tutorial-prev-btn" onclick="previousTutorialStep()" class="btn btn-secondary" style="flex: 1; display: none;">
+        <i class="fas fa-arrow-left"></i> Previous
+      </button>
+      <button id="tutorial-next-btn" onclick="nextTutorialStep()" class="btn btn-primary" style="flex: 2; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none;">
+        Next <i class="fas fa-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+  
   <!-- Confirmation Modal -->
   <div id="confirmation-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: 9998; backdrop-filter: blur(2px);">
     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); min-width: 400px; max-width: 500px;">
@@ -555,6 +604,26 @@
     @keyframes slideIn {
       from { transform: translateX(400px); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes celebrateScale {
+      0% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes tooltipFadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes highlightPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
+      50% { box-shadow: 0 0 0 15px rgba(102, 126, 234, 0); }
+    }
+    .tutorial-highlight {
+      position: relative;
+      z-index: 10000 !important;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.8), 0 0 40px rgba(102, 126, 234, 0.5) !important;
+      border-radius: 8px !important;
+      animation: highlightPulse 2s infinite;
     }
     #toast-notification {
       animation: slideIn 0.3s ease-out;

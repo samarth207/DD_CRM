@@ -6,6 +6,13 @@ let updateCheckInterval = null;
 
 // Start polling for updates
 function startUpdatePolling() {
+  // Only start polling for regular users, not for admins using user dashboard
+  const currentUser = getUser();
+  if (!currentUser || currentUser.role === 'admin') {
+    console.log('Update polling disabled for admin users');
+    return;
+  }
+  
   // Check for updates every 15 seconds
   updateCheckInterval = setInterval(checkForUpdates, 15000);
   console.log('Live update polling started');
@@ -16,30 +23,53 @@ function stopUpdatePolling() {
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
+    console.log('Update polling stopped');
   }
 }
+
+// Stop polling when page is hidden or user navigates away
+window.addEventListener('beforeunload', stopUpdatePolling);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopUpdatePolling();
+  } else {
+    // Restart polling when page becomes visible again (only for regular users)
+    const currentUser = getUser();
+    if (currentUser && currentUser.role !== 'admin' && !updateCheckInterval) {
+      startUpdatePolling();
+    }
+  }
+});
 
 // Check for updates
 async function checkForUpdates() {
   try {
     const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
     
-    if (response && response.ok) {
-      const data = await response.json();
-      if (data.hasUpdates) {
-        const changeType = data.countChanged 
-          ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
-          : 'updated';
-        showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
-        lastCheckTimestamp = data.latestTimestamp;
-        lastLeadCount = data.currentCount;
-      } else {
-        // Update count even if no changes to stay in sync
-        lastLeadCount = data.currentCount;
+    // Silently fail if request fails (e.g., network error, 401)
+    if (!response || !response.ok) {
+      // If 401, polling will stop via stopUpdatePolling in apiCall
+      if (response && response.status === 401) {
+        stopUpdatePolling();
       }
+      return;
+    }
+    
+    const data = await response.json();
+    if (data.hasUpdates) {
+      const changeType = data.countChanged 
+        ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
+        : 'updated';
+      showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
+      lastCheckTimestamp = data.latestTimestamp;
+      lastLeadCount = data.currentCount;
+    } else {
+      // Update count even if no changes to stay in sync
+      lastLeadCount = data.currentCount;
     }
   } catch (error) {
     console.error('Error checking for updates:', error);
+    // Don't stop polling on network errors, just log and continue
   }
 }
 
@@ -79,10 +109,28 @@ function dismissUpdateNotification() {
 // Refresh user data
 function refreshUserData() {
   dismissUpdateNotification();
-  // Reload leads data
-  currentPage = 1;
-  loadLeads();
-  showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
+  
+  // Save current modal state
+  const leadModal = document.getElementById('lead-modal');
+  const wasModalOpen = leadModal && leadModal.style.display === 'flex';
+  const currentLeadId = wasModalOpen && currentLead ? currentLead._id : null;
+  
+  // Reload leads data while preserving current page
+  const savedPage = currentPage;
+  loadLeads().then(() => {
+    // Restore page
+    currentPage = savedPage;
+    
+    // If modal was open, try to reopen the same lead
+    if (wasModalOpen && currentLeadId && allLeads) {
+      const lead = allLeads.find(l => l._id === currentLeadId);
+      if (lead) {
+        openLeadModal(lead);
+      }
+    }
+    
+    showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
+  });
 }
 
 // Show loading overlay
@@ -427,6 +475,254 @@ let userNoActionFilterActive = false;
 let userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
 
 // Initialize everything after DOM is ready
+// ===== TUTORIAL SYSTEM =====
+let currentTutorialStep = 0;
+const tutorialSteps = [
+  {
+    title: '📊 Dashboard Overview',
+    description: 'This is your main dashboard showing quick stats about your leads. You can see total leads, fresh leads, and today\'s activity at a glance.',
+    target: '.dashboard',
+    position: 'center'
+  },
+  {
+    title: '🔍 Search & Filters',
+    description: 'Use these powerful filters to find exactly what you\'re looking for. Search by name, email, city, and filter by status, source, date range, or leads with no recent activity.',
+    target: '.card:first-of-type',
+    position: 'bottom'
+  },
+  {
+    title: '📈 Status Cards',
+    description: 'Quick filter buttons showing lead counts by status. Click any card to instantly filter your leads. The counts update dynamically based on your active filters!',
+    target: '#status-filter-section',
+    position: 'bottom'
+  },
+  {
+    title: '📋 Your Leads',
+    description: 'This is where all your assigned leads appear. Click on any lead to view details, add notes, change status, and make calls. Use the action buttons to manage leads efficiently.',
+    target: '#leads-section',
+    position: 'top'
+  },
+  {
+    title: '✏️ Lead Details & Actions',
+    description: 'We\'ve opened a lead for you! See how the modal shows all details. You can: 1) Update Status (Fresh, Follow up, Counselled, etc.) 2) Add Notes to track conversations 3) Record Call Details with duration 4) Update Contact Info (phone, email, city) 5) View Full History of all interactions. All changes save automatically!',
+    target: '#lead-modal',
+    position: 'center'
+  },
+  {
+    title: '📄 Brochures Library',
+    description: 'Access all marketing brochures here. Download PDFs or copy links to share with your leads instantly.',
+    target: '#brochures-section',
+    position: 'top'
+  },
+  {
+    title: '📊 Analytics Dashboard',
+    description: 'Track your performance with beautiful charts. See your lead distribution by status, source analysis, and conversion trends over time.',
+    target: '#analytics-section',
+    position: 'top'
+  },
+  {
+    title: '🎯 Ready to Go!',
+    description: 'You\'re all set! Start managing your leads like a pro. Remember, you can always access help from the sidebar. Good luck! 🚀',
+    target: '.sidebar',
+    position: 'right'
+  }
+];
+
+function checkAndShowWelcome() {
+  // Check if user has seen tutorial
+  if (!user.hasSeenTutorial) {
+    showWelcomeModal();
+  }
+}
+
+function showWelcomeModal() {
+  const modal = document.getElementById('welcome-modal');
+  const userName = document.getElementById('welcome-user-name');
+  if (modal && userName) {
+    userName.textContent = `Hello, ${user.name}! 👋`;
+    modal.style.display = 'flex';
+  }
+}
+
+function startTutorial() {
+  // Hide welcome modal
+  const welcomeModal = document.getElementById('welcome-modal');
+  if (welcomeModal) welcomeModal.style.display = 'none';
+  
+  // Reset tutorial
+  currentTutorialStep = 0;
+  
+  // Show tutorial overlay and tooltip
+  document.getElementById('tutorial-overlay').style.display = 'block';
+  document.getElementById('tutorial-tooltip').style.display = 'block';
+  
+  // Show first step
+  showTutorialStep(0);
+}
+
+function showTutorialStep(stepIndex) {
+  if (stepIndex < 0 || stepIndex >= tutorialSteps.length) return;
+  
+  currentTutorialStep = stepIndex;
+  const step = tutorialSteps[stepIndex];
+  
+  // Close lead modal when moving away from lead details step
+  if (stepIndex !== 4) {
+    const leadModal = document.getElementById('lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      closeModal();
+    }
+  }
+  
+  // Update step indicator
+  document.getElementById('tutorial-step-indicator').textContent = `Step ${stepIndex + 1} of ${tutorialSteps.length}`;
+  document.getElementById('tutorial-title').textContent = step.title;
+  document.getElementById('tutorial-description').textContent = step.description;
+  
+  // Show/hide previous button
+  const prevBtn = document.getElementById('tutorial-prev-btn');
+  if (stepIndex === 0) {
+    prevBtn.style.display = 'none';
+  } else {
+    prevBtn.style.display = 'flex';
+  }
+  
+  // Update next button text
+  const nextBtn = document.getElementById('tutorial-next-btn');
+  if (stepIndex === tutorialSteps.length - 1) {
+    nextBtn.innerHTML = '<i class="fas fa-check"></i> Finish';
+  } else {
+    nextBtn.innerHTML = 'Next <i class="fas fa-arrow-right"></i>';
+  }
+  
+  // Remove previous highlights
+  document.querySelectorAll('.tutorial-highlight').forEach(el => {
+    el.classList.remove('tutorial-highlight');
+  });
+  
+  // Special handling for lead details step - open first lead if available
+  if (stepIndex === 4 && allLeads && allLeads.length > 0) {
+    // Open the first lead in the modal to demonstrate
+    setTimeout(() => {
+      openLeadModal(allLeads[0]);
+      // After modal opens, highlight it
+      setTimeout(() => {
+        const leadModal = document.getElementById('lead-modal');
+        if (leadModal) {
+          const modalContent = leadModal.querySelector('.modal-content');
+          if (modalContent) {
+            modalContent.classList.add('tutorial-highlight');
+            positionTooltip(modalContent, step.position);
+          }
+        }
+      }, 300);
+    }, 100);
+    return; // Skip normal highlighting for this step
+  }
+  
+  // Highlight target element
+  const targetElement = document.querySelector(step.target);
+  if (targetElement) {
+    targetElement.classList.add('tutorial-highlight');
+    
+    // Scroll to element
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Position tooltip
+    setTimeout(() => positionTooltip(targetElement, step.position), 300);
+  }
+}
+
+function positionTooltip(targetElement, position) {
+  const tooltip = document.getElementById('tutorial-tooltip');
+  const rect = targetElement.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  
+  let top, left;
+  
+  switch(position) {
+    case 'bottom':
+      top = rect.bottom + 20;
+      left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      break;
+    case 'top':
+      top = rect.top - tooltipRect.height - 20;
+      left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      break;
+    case 'right':
+      top = rect.top + (rect.height / 2) - (tooltipRect.height / 2);
+      left = rect.right + 20;
+      break;
+    case 'center':
+    default:
+      top = window.innerHeight / 2 - tooltipRect.height / 2;
+      left = window.innerWidth / 2 - tooltipRect.width / 2;
+      break;
+  }
+  
+  // Keep tooltip within viewport
+  top = Math.max(20, Math.min(top, window.innerHeight - tooltipRect.height - 20));
+  left = Math.max(20, Math.min(left, window.innerWidth - tooltipRect.width - 20));
+  
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+}
+
+function nextTutorialStep() {
+  if (currentTutorialStep < tutorialSteps.length - 1) {
+    showTutorialStep(currentTutorialStep + 1);
+  } else {
+    endTutorial();
+  }
+}
+
+function previousTutorialStep() {
+  if (currentTutorialStep > 0) {
+    showTutorialStep(currentTutorialStep - 1);
+  }
+}
+
+async function endTutorial() {
+  // Hide tutorial UI
+  document.getElementById('tutorial-overlay').style.display = 'none';
+  document.getElementById('tutorial-tooltip').style.display = 'none';
+  
+  // Remove highlights
+  document.querySelectorAll('.tutorial-highlight').forEach(el => {
+    el.classList.remove('tutorial-highlight');
+  });
+  
+  // Mark tutorial as complete
+  await markTutorialComplete();
+  
+  // Show success message
+  showToast('Tutorial Complete! 🎉', 'You\'re ready to start managing your leads!', 'success');
+}
+
+async function skipTutorial() {
+  // Hide welcome modal
+  const welcomeModal = document.getElementById('welcome-modal');
+  if (welcomeModal) welcomeModal.style.display = 'none';
+  
+  // Mark tutorial as complete (even though skipped)
+  await markTutorialComplete();
+}
+
+async function markTutorialComplete() {
+  try {
+    const response = await apiCall('/auth/complete-tutorial', {
+      method: 'PATCH'
+    });
+    
+    if (response.ok) {
+      // Update local user object
+      user.hasSeenTutorial = true;
+    }
+  } catch (error) {
+    console.error('Error marking tutorial complete:', error);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM Content Loaded - Initializing user dashboard');
   
@@ -488,6 +784,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Start live update polling
   startUpdatePolling();
+  
+  // Check if user needs to see welcome/tutorial (after a short delay for better UX)
+  setTimeout(() => checkAndShowWelcome(), 800);
   
   // Wire up update notification buttons
   const refreshBtn = document.getElementById('refresh-data-btn');
