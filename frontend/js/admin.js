@@ -353,6 +353,7 @@ let currentStatusLeads = [];
 let selectedUserIds = [];
 let currentUserLeads = []; // store leads from selected user for client-side filtering
 let globalSearchTimer = null;
+let overallFilteredLeads = null; // store filtered leads from overall status distribution time range
 
 // Load users on page load
 loadUsers();
@@ -858,6 +859,9 @@ async function loadOverallStats() {
       
       document.getElementById('overall-total-users').textContent = data.totalUsers;
       document.getElementById('overall-total-leads').textContent = data.totalLeads;
+      
+      // Reset filtered leads to null for initial "All Time" view
+      overallFilteredLeads = null;
       
       // Create overall status chart
       createOverallStatusChart(data.statusBreakdown);
@@ -1456,13 +1460,19 @@ async function showStatusDistributionModal(status) {
     const modal = document.getElementById('status-distribution-modal');
     if (!modal) return;
 
-    // Fetch all leads
-    const response = await apiCall('/admin/all-leads');
-    const data = await response.json();
-    if (!response.ok) return;
+    // Use filtered leads if available, otherwise fetch all leads
+    let allLeads;
+    if (overallFilteredLeads && overallFilteredLeads.length > 0) {
+      allLeads = overallFilteredLeads;
+    } else {
+      const response = await apiCall('/admin/all-leads');
+      const data = await response.json();
+      if (!response.ok) return;
+      allLeads = data.leads;
+    }
 
     // Filter leads by status
-    const leads = data.leads.filter(l => l.status === status);
+    const leads = allLeads.filter(l => l.status === status);
     currentStatusForDrillDown = status;
     currentStatusLeads = leads;
 
@@ -2771,6 +2781,9 @@ async function applyOverallDateFilter(filterValue) {
     const dateRange = getDateRange(filterValue);
     const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
     
+    // Store filtered leads globally for use in drill-down modals
+    overallFilteredLeads = filteredLeads;
+    
     // Calculate status breakdown
     const statusBreakdown = {};
     filteredLeads.forEach(lead => {
@@ -2816,6 +2829,9 @@ async function applyOverallDateFilterCustom(startDate, endDate) {
     
     const dateRange = getDateRange('custom', startDate, endDate);
     const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
+    
+    // Store filtered leads globally for use in drill-down modals
+    overallFilteredLeads = filteredLeads;
     
     const statusBreakdown = {};
     filteredLeads.forEach(lead => {
