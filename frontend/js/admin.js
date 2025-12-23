@@ -31,21 +31,35 @@ function closeCreateUserModal() {
 // Global Escape key handler for all modals
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
-    // Close admin lead modal first (highest priority - on top of everything)
+    // Close filtered user distribution modal first (highest priority)
+    const filteredUserDistModal = document.getElementById('filtered-user-distribution-modal');
+    if (filteredUserDistModal && filteredUserDistModal.style.display === 'flex') {
+      closeFilteredUserDistributionModal();
+      return;
+    }
+    
+    // Close filtered leads graph modal
+    const filteredLeadsGraphModal = document.getElementById('filtered-leads-graph-modal');
+    if (filteredLeadsGraphModal && filteredLeadsGraphModal.style.display === 'flex') {
+      closeFilteredLeadsGraphModal();
+      return;
+    }
+    
+    // Close admin lead modal
     const adminLeadModal = document.getElementById('admin-lead-modal');
     if (adminLeadModal && adminLeadModal.style.display === 'flex') {
       closeAdminLeadModal();
       return;
     }
     
-    // Close status leads modal (when it's on top of status distribution)
+    // Close status leads modal
     const statusLeadsModal = document.getElementById('status-leads-modal');
     if (statusLeadsModal && statusLeadsModal.style.display === 'flex') {
       closeStatusLeadsModal();
       return;
     }
     
-    // Close status distribution modal (only if status leads is not open)
+    // Close status distribution modal
     const statusDistModal = document.getElementById('status-distribution-modal');
     if (statusDistModal && statusDistModal.style.display === 'flex') {
       closeStatusDistributionModal();
@@ -884,6 +898,9 @@ function createOverallStatusChart(statusBreakdown) {
   const ctx = document.getElementById('overallStatusChart');
   if (!ctx) return;
   
+  // Register the custom plugin
+  Chart.register(barDataLabelsPlugin);
+  
   const labels = Object.keys(statusBreakdown);
   const data = Object.values(statusBreakdown);
   
@@ -922,6 +939,7 @@ function createOverallStatusChart(statusBreakdown) {
       responsive: true,
       maintainAspectRatio: true,
       plugins: {
+        barDataLabels: true,
         legend: { display: false },
         tooltip: {
           callbacks: {
@@ -1014,6 +1032,424 @@ function closeStatusLeadsModal() {
   modal.onclick = null;
 }
 
+// Filtered Leads Graph Functions
+let filteredLeadsChartInstance = null;
+let currentFilteredLeadsData = []; // Store filtered leads for user distribution
+
+// Custom plugin to display data labels on top of bars
+const barDataLabelsPlugin = {
+  id: 'barDataLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx, data, scales } = chart;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    
+    data.datasets.forEach((dataset, datasetIndex) => {
+      const meta = chart.getDatasetMeta(datasetIndex);
+      
+      meta.data.forEach((bar, index) => {
+        const value = dataset.data[index];
+        if (value === undefined || value === null) return;
+        
+        // Get bar position
+        const x = bar.x;
+        const y = bar.y;
+        
+        // Set text properties
+        ctx.fillStyle = '#1f2937';
+        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        
+        // Draw text above the bar
+        ctx.fillText(value, x, y - 8);
+      });
+    });
+  }
+};
+
+function closeFilteredLeadsGraphModal() {
+  document.getElementById('filtered-leads-graph-modal').style.display = 'none';
+  if (filteredLeadsChartInstance) {
+    filteredLeadsChartInstance.destroy();
+    filteredLeadsChartInstance = null;
+  }
+}
+
+let filteredUserDistributionChartInstance = null;
+
+function closeFilteredUserDistributionModal() {
+  document.getElementById('filtered-user-distribution-modal').style.display = 'none';
+  if (filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+    filteredUserDistributionChartInstance = null;
+  }
+}
+
+function showFilteredLeadsUserDistribution(status, sortedStatuses) {
+  const existingModal = document.getElementById('filtered-user-distribution-modal');
+  const isAlreadyOpen = existingModal && existingModal.style.display === 'flex';
+  
+  // If modal is already open, destroy the existing chart first
+  if (isAlreadyOpen && filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+    filteredUserDistributionChartInstance = null;
+  }
+  
+  // Now create the new chart for the selected status
+  openNewUserDistribution(status, sortedStatuses);
+}
+
+function openNewUserDistribution(status, sortedStatuses) {
+  const statusLeads = currentFilteredLeadsData.filter(lead => (lead.status || 'Unknown') === status);
+  
+  if (statusLeads.length === 0) {
+    alert('No leads found for this status.');
+    return;
+  }
+  
+  // Count leads by user
+  const userCounts = {};
+  statusLeads.forEach(lead => {
+    const userName = lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned';
+    userCounts[userName] = (userCounts[userName] || 0) + 1;
+  });
+  
+  // Sort by count descending
+  const sortedUsers = Object.entries(userCounts)
+    .sort((a, b) => b[1] - a[1]);
+  
+  // Prepare chart data
+  const labels = sortedUsers.map(([user]) => user);
+  const data = sortedUsers.map(([, count]) => count);
+  
+  // Define color for the status
+  const statusColors = {
+    'Fresh': '#6366f1',
+    'Buffer fresh': '#8b5cf6',
+    'Did not pick': '#ef4444',
+    'Request call back': '#f97316',
+    'Follow up': '#eab308',
+    'Counselled': '#06b6d4',
+    'Interested in next batch': '#3b82f6',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#8b5cf6',
+    'Junk/not interested': '#64748b',
+    'Unknown': '#9ca3af'
+  };
+  
+  const backgroundColor = statusColors[status] || '#6366f1';
+  
+  // Show modal
+  document.getElementById('filtered-user-distribution-modal').style.display = 'flex';
+  document.getElementById('filtered-user-dist-title').textContent = `User Distribution - ${status}`;
+  
+  // Destroy existing chart if any
+  if (filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+  }
+  
+  // Create new chart
+  const ctx = document.getElementById('filtered-user-distribution-chart');
+  if (!ctx) return;
+  
+  filteredUserDistributionChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Number of Leads',
+        data: data,
+        backgroundColor: backgroundColor,
+        borderColor: backgroundColor,
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        barDataLabels: true,
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            padding: 15,
+            font: {
+              size: 13,
+              weight: '500'
+            },
+            color: '#4b5563'
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function(context) {
+              const value = context.parsed.y;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return `${value} leads (${percentage}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: '#f3f4f6'
+          },
+          ticks: {
+            font: { size: 12 },
+            color: '#6b7280'
+          }
+        },
+        x: {
+          ticks: {
+            font: { size: 12 },
+            color: '#4b5563',
+            padding: 8
+          },
+          grid: {
+            display: false
+          }
+        }
+      }
+    }
+  });
+  
+  // Update summary statistics
+  updateFilteredUserDistributionSummary(status, sortedUsers);
+}
+
+function updateFilteredUserDistributionSummary(status, sortedUsers) {
+  const statsDiv = document.getElementById('filtered-user-dist-stats');
+  statsDiv.innerHTML = '';
+  
+  const total = sortedUsers.reduce((sum, [, count]) => sum + count, 0);
+  const topUser = sortedUsers[0];
+  
+  // Add total leads stat
+  const totalDiv = document.createElement('div');
+  totalDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+  totalDiv.innerHTML = `
+    <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Total Leads</div>
+    <div style="font-size: 20px; font-weight: 700; color: #1f2937;">${total}</div>
+  `;
+  statsDiv.appendChild(totalDiv);
+  
+  // Add top user stat
+  if (topUser) {
+    const topDiv = document.createElement('div');
+    topDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    topDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Assigned Most</div>
+      <div style="font-size: 16px; font-weight: 600; color: #1f2937;">${topUser[0]}</div>
+      <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${topUser[1]} leads (${((topUser[1] / total) * 100).toFixed(1)}%)</div>
+    `;
+    statsDiv.appendChild(topDiv);
+  }
+  
+  // Add user breakdown
+  sortedUsers.slice(0, 3).forEach(([user, count]) => {
+    const userDiv = document.createElement('div');
+    userDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    const percentage = ((count / total) * 100).toFixed(1);
+    userDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${user}</div>
+      <div style="font-size: 18px; font-weight: 700; color: #1f2937;">${count}</div>
+      <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${percentage}% of total</div>
+    `;
+    statsDiv.appendChild(userDiv);
+  });
+}
+
+function showFilteredLeadsGraph() {
+  // Register the custom plugin
+  Chart.register(barDataLabelsPlugin);
+  
+  // Get currently filtered leads
+  if (!filteredLeadsData || filteredLeadsData.length === 0) {
+    alert('No leads to display. Please check your filters.');
+    return;
+  }
+  
+  // Store filtered leads for user distribution
+  currentFilteredLeadsData = [...filteredLeadsData];
+
+  // Count leads by status
+  const statusCounts = {};
+  filteredLeadsData.forEach(lead => {
+    const status = lead.status || 'Unknown';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  });
+
+  // Sort by count descending
+  const sortedStatuses = Object.entries(statusCounts)
+    .sort((a, b) => b[1] - a[1]);
+
+  // Prepare chart data
+  const labels = sortedStatuses.map(([status]) => status);
+  const data = sortedStatuses.map(([, count]) => count);
+
+  // Define colors for each status
+  const statusColors = {
+    'Fresh': '#6366f1',
+    'Buffer fresh': '#8b5cf6',
+    'Did not pick': '#ef4444',
+    'Request call back': '#f97316',
+    'Follow up': '#eab308',
+    'Counselled': '#06b6d4',
+    'Interested in next batch': '#3b82f6',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#8b5cf6',
+    'Junk/not interested': '#64748b',
+    'Unknown': '#9ca3af'
+  };
+
+  const backgroundColors = labels.map(label => statusColors[label] || '#6366f1');
+
+  // Show modal
+  document.getElementById('filtered-leads-graph-modal').style.display = 'flex';
+
+  // Destroy existing chart if any
+  if (filteredLeadsChartInstance) {
+    filteredLeadsChartInstance.destroy();
+  }
+
+  // Create new chart
+  const ctx = document.getElementById('filtered-leads-chart');
+  if (!ctx) return;
+
+  filteredLeadsChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Number of Leads',
+        data: data,
+        backgroundColor: backgroundColors,
+        borderColor: backgroundColors,
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        barDataLabels: true,
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            padding: 15,
+            font: {
+              size: 13,
+              weight: '500'
+            },
+            color: '#4b5563'
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function(context) {
+              const value = context.parsed.y;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return `${value} leads (${percentage}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: {
+            color: '#f3f4f6'
+          },
+          ticks: {
+            font: { size: 12 },
+            color: '#6b7280'
+          }
+        },
+        y: {
+          ticks: {
+            font: { size: 12 },
+            color: '#4b5563',
+            padding: 8
+          },
+          grid: {
+            display: false
+          }
+        }
+      },
+      onClick: (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const status = labels[idx];
+        showFilteredLeadsUserDistribution(status, sortedStatuses);
+      }
+    }
+  });
+
+  // Update summary statistics
+  updateGraphSummary(filteredLeadsData, sortedStatuses);
+}
+
+function updateGraphSummary(leads, sortedStatuses) {
+  const statsDiv = document.getElementById('graph-stats');
+  statsDiv.innerHTML = '';
+
+  const total = leads.length;
+  const topStatus = sortedStatuses[0];
+  
+  // Add total leads stat
+  const totalDiv = document.createElement('div');
+  totalDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+  totalDiv.innerHTML = `
+    <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Total Leads</div>
+    <div style="font-size: 20px; font-weight: 700; color: #1f2937;">${total}</div>
+  `;
+  statsDiv.appendChild(totalDiv);
+
+  // Add top status stat
+  if (topStatus) {
+    const topDiv = document.createElement('div');
+    topDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    topDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Most Common</div>
+      <div style="font-size: 16px; font-weight: 600; color: #1f2937;">${topStatus[0]}</div>
+      <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${topStatus[1]} leads (${((topStatus[1] / total) * 100).toFixed(1)}%)</div>
+    `;
+    statsDiv.appendChild(topDiv);
+  }
+
+  // Add status breakdown
+  sortedStatuses.slice(0, 4).forEach(([status, count]) => {
+    const statDiv = document.createElement('div');
+    statDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    const percentage = ((count / total) * 100).toFixed(1);
+    statDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${status}</div>
+      <div style="font-size: 18px; font-weight: 700; color: #1f2937;">${count}</div>
+      <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${percentage}% of total</div>
+    `;
+    statsDiv.appendChild(statDiv);
+  });
+}
+
 // New drill-down modal functions
 async function showStatusDistributionModal(status) {
   try {
@@ -1069,6 +1505,9 @@ async function showStatusDistributionModal(status) {
 function createStatusUserDistributionChart(userStats, status) {
   const ctx = document.getElementById('statusUserDistributionChart');
   if (!ctx) return;
+  
+  // Register the custom plugin
+  Chart.register(barDataLabelsPlugin);
 
   const labels = userStats.map(u => u.name);
   const data = userStats.map(u => u.count);
@@ -1109,6 +1548,7 @@ function createStatusUserDistributionChart(userStats, status) {
       responsive: true,
       maintainAspectRatio: true,
       plugins: {
+        barDataLabels: true,
         legend: { display: false },
         tooltip: {
           callbacks: {
@@ -1340,6 +1780,9 @@ function updateStatusChart(statusBreakdown, allLeads) {
   const ctx = document.getElementById('statusChart');
   if (!ctx) return;
   
+  // Register the custom plugin
+  Chart.register(barDataLabelsPlugin);
+  
   const labels = Object.keys(statusBreakdown);
   const data = Object.values(statusBreakdown);
   
@@ -1384,6 +1827,7 @@ function updateStatusChart(statusBreakdown, allLeads) {
       responsive: true,
       maintainAspectRatio: true,
       plugins: {
+        barDataLabels: true,
         legend: {
           display: false
         },
@@ -1659,8 +2103,10 @@ async function quickUpdateAdminLead() {
       
       showTransferMessage(`Lead updated successfully! (${updates.join(', ')})`, 'success');
       
-      // Refresh the lead modal
-      await openLeadModal(currentLeadId);
+      // Close the modal after successful update
+      setTimeout(() => {
+        closeAdminLeadModal();
+      }, 1000);
       
       // Refresh entire dashboard dynamically
       await refreshDashboard();
@@ -3096,6 +3542,9 @@ async function loadAllLeads() {
         });
       }
       
+      // Populate source filter with unique sources from leads
+      populateAdminSourceFilter(allLeadsData);
+      
       // Populate transfer filter user dropdowns with all users from the system
       const transferFromUser = document.getElementById('transfer-from-user');
       const transferToUser = document.getElementById('transfer-to-user');
@@ -3139,12 +3588,33 @@ async function loadAllLeads() {
   }
 }
 
+// Populate source filter with unique sources
+function populateAdminSourceFilter(leads) {
+  const sourceFilter = document.getElementById('all-leads-source-filter');
+  const currentSelection = sourceFilter.value;
+  
+  // Get unique sources
+  const sources = [...new Set(leads.map(lead => lead.source || 'Other'))].sort();
+  
+  sourceFilter.innerHTML = '<option value="">All Sources</option>';
+  sources.forEach(source => {
+    const option = document.createElement('option');
+    option.value = source;
+    option.textContent = source;
+    sourceFilter.appendChild(option);
+  });
+  
+  // Restore previous selection
+  sourceFilter.value = currentSelection;
+}
+
 // Render all leads with filters applied
 function renderAllLeads() {
   const tbody = document.getElementById('all-leads-tbody');
   const searchTerm = document.getElementById('all-leads-search').value.toLowerCase();
   const statusFilter = document.getElementById('all-leads-status-filter').value;
   const userFilter = document.getElementById('all-leads-user-filter').value;
+  const sourceFilter = document.getElementById('all-leads-source-filter').value;
 
   let filteredLeads = allLeadsData;
 
@@ -3173,6 +3643,11 @@ function renderAllLeads() {
       const userName = lead.assignedTo ? lead.assignedTo.name : 'Unassigned';
       return userName === userFilter;
     });
+  }
+
+  // Apply source filter
+  if (sourceFilter) {
+    filteredLeads = filteredLeads.filter(lead => (lead.source || 'Other') === sourceFilter);
   }
 
   // Apply transition filter if active
@@ -3927,6 +4402,7 @@ function debounce(func, wait) {
 document.getElementById('all-leads-search').addEventListener('input', debounce(renderAllLeads, 300));
 document.getElementById('all-leads-status-filter').addEventListener('change', renderAllLeads);
 document.getElementById('all-leads-user-filter').addEventListener('change', renderAllLeads);
+document.getElementById('all-leads-source-filter').addEventListener('change', renderAllLeads);
 
 // Add escape key handler for create lead modal
 document.addEventListener('keydown', function(e) {

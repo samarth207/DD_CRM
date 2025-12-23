@@ -921,8 +921,60 @@ body {
   transform: translateX(0);
 }
 
-@media (max-width: 640px) {
-  #lead-modal .modal-content {
+/* Admin lead modal: same right-side drawer styling with transparent backdrop */
+#admin-lead-modal {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+#admin-lead-modal .modal-content {
+  height: 100vh;
+  max-height: 100vh;
+  width: 520px;
+  max-width: 90vw;
+  margin: 0;
+  border-radius: 12px 0 0 12px;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.15);
+  animation: none;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+#admin-lead-modal[style*="display: flex"] .modal-content {
+  transform: translateX(0);
+}
+
+/* Filtered leads graph modal - slide in from right with transparent background */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Filtered user distribution modal - slide in from left with transparent background */
+@keyframes slideInFromLeftModal {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+    width: 100vw;
+    border-radius: 0;
+  }
+  
+  #admin-lead-modal .modal-content {
     width: 100vw;
     border-radius: 0;
   }

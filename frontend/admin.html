@@ -208,6 +208,10 @@
             <option value="">All Users</option>
           </select>
           
+          <select id="all-leads-source-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+            <option value="">All Sources</option>
+          </select>
+          
           <button onclick="toggleTransitionFilter()" class="btn btn-secondary" style="font-size: 13px;">
             <i class="fas fa-exchange-alt"></i> Status Transition
           </button>
@@ -222,6 +226,10 @@
           
           <button onclick="loadAllLeads()" class="btn btn-secondary" style="font-size: 13px;">
             <i class="fas fa-sync"></i> Refresh
+          </button>
+          
+          <button onclick="showFilteredLeadsGraph()" class="btn btn-primary" style="font-size: 13px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);">
+            <i class="fas fa-chart-bar"></i> Show Graph
           </button>
         </div>
 
@@ -770,7 +778,7 @@
       
     </div>
   </div>  <!-- Lead Detail Modal -->
-  <div id="admin-lead-modal" class="modal" style="display:none; z-index: 10002;">
+  <div id="admin-lead-modal" class="modal" style="display:none; z-index: 10002; background: transparent; backdrop-filter: none; justify-content: flex-end; padding: 0; align-items: stretch;">
     <div class="modal-content" style="max-width: 800px;">
       <span class="close" onclick="closeAdminLeadModal()">&times;</span>
       <div style="margin-bottom: 16px;">
@@ -1193,6 +1201,48 @@
         <button id="confirm-action-btn" class="btn btn-primary" style="padding: 8px 16px;">
           <i class="fas fa-check"></i> Confirm
         </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Filtered Leads Graph Modal -->
+  <div id="filtered-leads-graph-modal" class="modal" style="display:none; z-index: 10001; background: rgba(0, 0, 0, 0.4); backdrop-filter: none; justify-content: flex-end; padding: 0; align-items: stretch;" onclick="closeFilteredLeadsGraphModal()">
+    <div class="modal-content" style="max-width: 600px; width: 600px; max-height: 100vh; margin: 0; border-radius: 0 12px 12px 0; box-shadow: -8px 0 24px rgba(0,0,0,0.15); animation: slideInFromRight 0.3s ease-out; overflow-y: auto;" onclick="event.stopPropagation()">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0; color: #1f2937;">Status Distribution - Filtered Leads</h2>
+        <button onclick="closeFilteredLeadsGraphModal()" class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;">
+          <i class="fas fa-times"></i> Close
+        </button>
+      </div>
+      <div style="position: relative; height: 400px; margin-bottom: 20px;">
+        <canvas id="filtered-leads-chart"></canvas>
+      </div>
+      <div id="graph-summary" style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+        <h4 style="margin: 0 0 12px 0; color: #6366f1;">Summary Statistics</h4>
+        <div id="graph-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+          <!-- Stats will be populated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- User Distribution Popup for Filtered Leads -->
+  <div id="filtered-user-distribution-modal" class="modal" style="display:none; z-index: 10002; background: transparent; backdrop-filter: none; justify-content: flex-start; padding: 0; align-items: stretch; pointer-events: none;">
+    <div class="modal-content" style="max-width: 600px; width: 600px; max-height: 100vh; margin: 0; border-radius: 0 12px 12px 0; box-shadow: 8px 0 24px rgba(0,0,0,0.15); animation: slideInFromLeftModal 0.3s ease-out; overflow-y: auto; pointer-events: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 id="filtered-user-dist-title" style="margin: 0; color: #1f2937;">User Distribution</h2>
+        <button onclick="closeFilteredUserDistributionModal()" class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;">
+          <i class="fas fa-times"></i> Close
+        </button>
+      </div>
+      <div style="position: relative; height: 400px; margin-bottom: 20px;">
+        <canvas id="filtered-user-distribution-chart"></canvas>
+      </div>
+      <div id="filtered-user-dist-summary" style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+        <h4 style="margin: 0 0 12px 0; color: #6366f1;">Summary</h4>
+        <div id="filtered-user-dist-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+          <!-- Stats will be populated here -->
+        </div>
       </div>
     </div>
   </div>
