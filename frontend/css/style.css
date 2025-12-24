@@ -63,9 +63,19 @@ body {
 }
 
 .sidebar-logo {
-  padding: 0 16px 20px;
+  padding: 20px 16px;
   border-bottom: 1px solid #e5e7eb;
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+}
+
+.sidebar-logo img {
+  max-width: 140px;
+  height: auto;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
 }
 
 .sidebar-logo h1 {
