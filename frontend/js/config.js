@@ -110,16 +110,25 @@ async function apiCall(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers
-  });
-  
-  if (response.status === 401) {
-    clearAuth();
-    window.location.href = 'index.html';
-    return;
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers
+    });
+    
+    // Handle 401 only if token exists but is invalid
+    // Don't trigger logout for transient network errors
+    if (response.status === 401 && token) {
+      // Only clear auth if this is a real auth failure, not a network issue
+      clearAuth();
+      window.location.href = 'index.html?session=expired';
+      return null;
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('API call failed:', error);
+    // Return null instead of throwing - let caller handle
+    return null;
   }
-  
-  return response;
 }

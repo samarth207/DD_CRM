@@ -1,3 +1,13 @@
+// Role validation - ensure user is on user page
+(function validateUserRole() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (user && user.role === 'admin') {
+    // Admin token found on user page - redirect to admin page
+    console.log('Admin user detected on user page, redirecting to admin page');
+    window.location.replace('admin.html');
+  }
+})();
+
 // ===== MODAL AND NOTIFICATION HELPERS =====
 // Live Update Polling System
 let lastCheckTimestamp = Date.now();
@@ -30,10 +40,13 @@ async function checkForUpdates() {
     
     const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
     
-    // Handle auth errors - apiCall will redirect
-    if (!response) return;
+    // Handle auth errors or network failures - stop polling if logged out
+    if (!response) {
+      stopUpdatePolling();
+      return;
+    }
     
-    if (response && response.ok) {
+    if (response.ok) {
       const data = await response.json();
       if (data.hasUpdates) {
         const changeType = data.countChanged 
@@ -92,6 +105,8 @@ function refreshUserData() {
   // Reload leads data
   currentPage = 1;
   loadLeads();
+  // Update timestamp to prevent duplicate notifications
+  lastCheckTimestamp = Date.now();
   showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
 }
 
@@ -748,7 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
   startUpdatePolling();
   
   // Check if user needs to see welcome/tutorial (after a short delay for better UX)
-  setTimeout(() => checkAndShowWelcome(), 800);
+  // DISABLED: Tutorial temporarily disabled
+  // setTimeout(() => checkAndShowWelcome(), 800);
   
   // Wire up update notification buttons
   const refreshBtn = document.getElementById('refresh-data-btn');
@@ -781,8 +797,11 @@ async function loadLeads() {
     // Load all leads without pagination for stats (limit set high)
     const response = await apiCall('/leads?limit=10000');
     
-    // Handle auth errors separately - apiCall will redirect
-    if (!response) return;
+    // Handle auth errors or network failures - apiCall returns null
+    if (!response) {
+      console.log('Auth error or network failure - apiCall returned null');
+      return; // Don't show error, apiCall already handles redirect
+    }
     
     const data = await response.json();
     
@@ -801,7 +820,7 @@ async function loadLeads() {
     }
   } catch (error) {
     console.error('Error loading leads:', error);
-    showToast('Network Error', 'Failed to load leads. Please check your connection.', 'error');
+    // Don't show toast for errors - might be auth redirect in progress
   }
 }
 

@@ -1,3 +1,13 @@
+// Role validation - ensure admin is on admin page
+(function validateAdminRole() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (user && user.role !== 'admin') {
+    // User token found on admin page - redirect to user page
+    console.log('Non-admin user detected on admin page, redirecting to user page');
+    window.location.replace('user.html');
+  }
+})();
+
 // Modal functions for Add Brochure
 function openAddBrochureModal() {
   const modal = document.getElementById('add-brochure-modal');
