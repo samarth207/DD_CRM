@@ -466,6 +466,11 @@ let currentLead = null;
 let userNoActionFilterActive = false;
 let userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
 
+// Multi-select filter arrays
+let userSelectedStatusFilters = [];
+let userSelectedSourceFilters = [];
+let userSelectedUniversityFilters = [];
+
 // Initialize everything after DOM is ready
 // ===== TUTORIAL SYSTEM =====
 let currentTutorialStep = 0;
@@ -774,6 +779,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load leads after DOM is ready
   loadLeads();
   
+  // Initialize multi-select dropdowns
+  initUserMultiSelectDropdowns();
+  
   // Start live update polling
   startUpdatePolling();
   
@@ -824,6 +832,8 @@ async function loadLeads() {
       allLeads = data.leads || data; // Support both new and old format
       lastLeadCount = allLeads.length; // Update count for change detection
       populateSourceFilter(allLeads);
+      buildUserSourceMultiSelect();
+      buildUserUniversityMultiSelect();
       updateStats();
       updateStatusCounts(); // Update status filter counts
       displayLeads();
@@ -913,14 +923,19 @@ function updateStatusCounts() {
   if (!allLeads) return;
   
   // Get filtered leads using the same logic as displayLeads
-  const filterStatus = document.getElementById('filter-status').value;
   const filterSearch = document.getElementById('filter-search').value.toLowerCase();
-  const filterSource = document.getElementById('filter-source').value;
   const filterDate = document.getElementById('filter-date').value;
-  const filterCustomDate = document.getElementById('filter-custom-date').value;
+  const filterCustomDateStart = document.getElementById('filter-custom-date').value;
+  const filterCustomDateEndEl = document.getElementById('filter-custom-date-end');
+  const filterCustomDateEnd = filterCustomDateEndEl ? filterCustomDateEndEl.value : '';
+  // Build custom date object for range
+  const customDateValue = filterDate === 'custom' ? { start: filterCustomDateStart, end: filterCustomDateEnd || filterCustomDateStart } : filterCustomDateStart;
   
   const filteredLeads = allLeads.filter(lead => {
-    const matchesSource = !filterSource || (lead.source || 'Other') === filterSource;
+    // Multi-select source filter
+    const matchesSource = userSelectedSourceFilters.length === 0 || userSelectedSourceFilters.includes(lead.source || 'Other');
+    // Multi-select university filter
+    const matchesUniversity = userSelectedUniversityFilters.length === 0 || userSelectedUniversityFilters.includes(lead.university || 'Not Specified');
     const matchesSearch = !filterSearch || 
       (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
       (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
@@ -930,24 +945,11 @@ function updateStatusCounts() {
       (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
       (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
-    let matchesDate = true;
-    if (filterDate && lead.assignmentHistory && lead.assignmentHistory.length > 0) {
-      const userAssignments = lead.assignmentHistory.filter(h => 
-        h.toUser && (h.toUser._id === window.currentUserId || h.toUser === window.currentUserId)
-      );
-      
-      if (userAssignments.length > 0) {
-        const lastAssignment = userAssignments[userAssignments.length - 1];
-        const assignmentDate = new Date(lastAssignment.changedAt || lead.createdAt);
-        matchesDate = checkDateMatch(assignmentDate, filterDate, filterCustomDate);
-      } else {
-        const createdDate = new Date(lead.createdAt);
-        matchesDate = checkDateMatch(createdDate, filterDate, filterCustomDate);
-      }
-    }
+    // Date filtering - check if lead has ANY activity (status, notes, transfer) on date
+    const matchesDate = checkLeadHasActivityOnDate(lead, filterDate, customDateValue);
     
     const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
-    return matchesSource && matchesSearch && matchesDate && matchesNoAction;
+    return matchesSource && matchesUniversity && matchesSearch && matchesDate && matchesNoAction;
   });
   
   const statusCounts = {
@@ -1005,18 +1007,24 @@ function populateSourceFilter(leads) {
 }
 
 function displayLeads() {
-  const filterStatus = document.getElementById('filter-status').value;
   const filterSearch = document.getElementById('filter-search').value.toLowerCase();
-  const filterSource = document.getElementById('filter-source').value;
   const filterDate = document.getElementById('filter-date').value;
-  const filterCustomDate = document.getElementById('filter-custom-date').value;
+  const filterCustomDateStart = document.getElementById('filter-custom-date').value;
+  const filterCustomDateEndEl = document.getElementById('filter-custom-date-end');
+  const filterCustomDateEnd = filterCustomDateEndEl ? filterCustomDateEndEl.value : '';
+  // Build custom date object for range
+  const customDateValue = filterDate === 'custom' ? { start: filterCustomDateStart, end: filterCustomDateEnd || filterCustomDateStart } : filterCustomDateStart;
   
   // Update status counts
   updateStatusCounts();
   
   const filteredLeads = allLeads.filter(lead => {
-    const matchesStatus = !filterStatus || lead.status === filterStatus;
-    const matchesSource = !filterSource || (lead.source || 'Other') === filterSource;
+    // Multi-select status filter
+    const matchesStatus = userSelectedStatusFilters.length === 0 || userSelectedStatusFilters.includes(lead.status);
+    // Multi-select source filter
+    const matchesSource = userSelectedSourceFilters.length === 0 || userSelectedSourceFilters.includes(lead.source || 'Other');
+    // Multi-select university filter
+    const matchesUniversity = userSelectedUniversityFilters.length === 0 || userSelectedUniversityFilters.includes(lead.university || 'Not Specified');
     const matchesSearch = !filterSearch || 
       (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
       (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
@@ -1026,27 +1034,11 @@ function displayLeads() {
       (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
       (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
-    // Date filtering based on assignment history
-    let matchesDate = true;
-    if (filterDate && lead.assignmentHistory && lead.assignmentHistory.length > 0) {
-      // Get the most recent assignment date for this user
-      const userAssignments = lead.assignmentHistory.filter(h => 
-        h.toUser && (h.toUser._id === window.currentUserId || h.toUser === window.currentUserId)
-      );
-      
-      if (userAssignments.length > 0) {
-        const lastAssignment = userAssignments[userAssignments.length - 1];
-        const assignmentDate = new Date(lastAssignment.changedAt || lead.createdAt);
-        matchesDate = checkDateMatch(assignmentDate, filterDate, filterCustomDate);
-      } else {
-        // Fallback to createdAt if no assignment history
-        const createdDate = new Date(lead.createdAt);
-        matchesDate = checkDateMatch(createdDate, filterDate, filterCustomDate);
-      }
-    }
+    // Date filtering - check if lead has ANY activity (status, notes, transfer) on date
+    const matchesDate = checkLeadHasActivityOnDate(lead, filterDate, customDateValue);
     
     const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
-    return matchesStatus && matchesSource && matchesSearch && matchesDate && matchesNoAction;
+    return matchesStatus && matchesSource && matchesUniversity && matchesSearch && matchesDate && matchesNoAction;
   });
   
   const container = document.getElementById('leads-container');
@@ -1343,8 +1335,21 @@ document.addEventListener('keydown', (e) => {
 function quickFilter(status) {
   console.log('Quick filter clicked:', status);
   window.currentLeadsPage = 1; // Reset pagination
-  document.getElementById('filter-status').value = status;
+  
+  // Clear other filters
   document.getElementById('filter-search').value = '';
+  
+  // Set multi-select status filter to only selected status
+  userSelectedStatusFilters = status ? [status] : [];
+  
+  // Update checkboxes to match
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = status ? cb.value === status : false;
+  });
+  
+  // Update toggle label
+  updateUserStatusFilterLabel();
+  
   displayLeads();
   
   // Scroll to leads section with a small delay
@@ -1396,24 +1401,96 @@ function checkDateMatch(date, filterType, customDate) {
     
     case 'custom':
       if (!customDate) return true;
-      const customCompare = new Date(customDate);
-      customCompare.setHours(0, 0, 0, 0);
-      return compareDate.getTime() === customCompare.getTime();
+      // customDate can be {start, end} for range or just a date string
+      if (typeof customDate === 'object' && customDate.start) {
+        const startDate = new Date(customDate.start);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = customDate.end ? new Date(customDate.end) : new Date(customDate.start);
+        endDate.setHours(23, 59, 59, 999);
+        return compareDate >= startDate && compareDate <= endDate;
+      } else {
+        const customCompare = new Date(customDate);
+        customCompare.setHours(0, 0, 0, 0);
+        return compareDate.getTime() === customCompare.getTime();
+      }
     
     default:
       return true;
   }
 }
 
+// Check if lead has any activity (status change, note, or transfer) on the given date range
+function checkLeadHasActivityOnDate(lead, filterType, customDate) {
+  if (!filterType) return true;
+  
+  const activityDates = [];
+  
+  // Check status history dates
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    lead.statusHistory.forEach(entry => {
+      if (entry.changedAt) activityDates.push(new Date(entry.changedAt));
+    });
+  }
+  
+  // Check notes dates
+  if (lead.notes && lead.notes.length > 0) {
+    lead.notes.forEach(note => {
+      if (note.createdAt) activityDates.push(new Date(note.createdAt));
+    });
+  }
+  
+  // Check assignment/transfer history dates (for this user)
+  if (lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+    lead.assignmentHistory.forEach(entry => {
+      // Include if user was assigned TO (transfer to them)
+      if (entry.toUser && (entry.toUser._id === window.currentUserId || entry.toUser === window.currentUserId)) {
+        if (entry.changedAt) activityDates.push(new Date(entry.changedAt));
+      }
+    });
+  }
+  
+  // Also include lead creation date as an activity
+  if (lead.createdAt) activityDates.push(new Date(lead.createdAt));
+  
+  // Also include updatedAt as activity indicator
+  if (lead.updatedAt) activityDates.push(new Date(lead.updatedAt));
+  
+  // Check if any activity date matches the filter
+  return activityDates.some(date => checkDateMatch(date, filterType, customDate));
+}
+
 // Clear filters function
 function clearFilters() {
   window.currentLeadsPage = 1; // Reset pagination
+  
+  // Reset multi-select status filter
+  userSelectedStatusFilters = [];
+  const statusToggle = document.getElementById('user-status-toggle');
+  if (statusToggle) statusToggle.textContent = 'All Statuses';
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Reset multi-select source filter
+  userSelectedSourceFilters = [];
+  const sourceToggle = document.getElementById('user-source-toggle');
+  if (sourceToggle) sourceToggle.textContent = 'All Sources';
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Reset multi-select university filter
+  userSelectedUniversityFilters = [];
+  const universityToggle = document.getElementById('user-university-toggle');
+  if (universityToggle) universityToggle.textContent = 'All Universities';
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Keep hidden inputs for backward compatibility
   document.getElementById('filter-status').value = '';
   document.getElementById('filter-source').value = '';
   document.getElementById('filter-search').value = '';
   document.getElementById('filter-date').value = '';
-  document.getElementById('filter-custom-date').style.display = 'none';
+  const customDateRange = document.getElementById('custom-date-range');
+  if (customDateRange) customDateRange.style.display = 'none';
   document.getElementById('filter-custom-date').value = '';
+  const customDateEnd = document.getElementById('filter-custom-date-end');
+  if (customDateEnd) customDateEnd.value = '';
   clearUserNoActionFilter(false);
   displayLeads();
 }
@@ -1827,35 +1904,304 @@ function debounce(func, wait) {
   };
 }
 
-// Event listeners for filters
-document.getElementById('filter-status').addEventListener('change', () => {
-  window.currentLeadsPage = 1; // Reset pagination on filter change
-  displayLeads();
-});
+// ===== USER MULTI-SELECT FILTER FUNCTIONS =====
 
-document.getElementById('filter-source').addEventListener('change', () => {
+// Status filter multi-select functions
+function selectAllUserStatuses() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedStatusFilters.push(cb.value);
+  });
+  updateUserStatusFilterLabel();
   window.currentLeadsPage = 1;
   displayLeads();
-});
+}
+
+function clearUserStatusFilter() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserStatusFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserStatusFilter() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedStatusFilters.push(cb.value);
+  });
+  updateUserStatusFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserStatusFilterLabel() {
+  const toggle = document.getElementById('user-status-toggle');
+  if (userSelectedStatusFilters.length === 0) {
+    toggle.textContent = 'All Statuses';
+  } else if (userSelectedStatusFilters.length === 1) {
+    toggle.textContent = userSelectedStatusFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedStatusFilters.length} statuses`;
+  }
+}
+
+// Source filter multi-select functions
+function buildUserSourceMultiSelect() {
+  const toggle = document.getElementById('user-source-toggle');
+  const dropdown = document.getElementById('user-source-dropdown');
+  if (!toggle || !dropdown || !allLeads) return;
+
+  // Collect unique sources
+  const sources = new Set();
+  allLeads.forEach(lead => {
+    sources.add(lead.source || 'Other');
+  });
+  const sortedSources = Array.from(sources).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserSources();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserSourceFilter();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all sources
+  sortedSources.forEach(source => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = source;
+    cb.onchange = () => updateUserSourceFilter();
+    const span = document.createElement('span');
+    span.textContent = source;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserSources() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedSourceFilters.push(cb.value);
+  });
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function clearUserSourceFilter() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserSourceFilter() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedSourceFilters.push(cb.value);
+  });
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserSourceFilterLabel() {
+  const toggle = document.getElementById('user-source-toggle');
+  if (userSelectedSourceFilters.length === 0) {
+    toggle.textContent = 'All Sources';
+  } else if (userSelectedSourceFilters.length === 1) {
+    toggle.textContent = userSelectedSourceFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedSourceFilters.length} sources`;
+  }
+}
+
+// University filter multi-select functions
+function buildUserUniversityMultiSelect() {
+  const toggle = document.getElementById('user-university-toggle');
+  const dropdown = document.getElementById('user-university-dropdown');
+  if (!toggle || !dropdown || !allLeads) return;
+
+  // Collect unique universities
+  const universities = new Set();
+  allLeads.forEach(lead => {
+    universities.add(lead.university || 'Not Specified');
+  });
+  const sortedUniversities = Array.from(universities).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserUniversities();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserUniversityFilter();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all universities
+  sortedUniversities.forEach(university => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = university;
+    cb.onchange = () => updateUserUniversityFilter();
+    const span = document.createElement('span');
+    span.textContent = university;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserUniversities() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedUniversityFilters.push(cb.value);
+  });
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function clearUserUniversityFilter() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserUniversityFilter() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedUniversityFilters.push(cb.value);
+  });
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserUniversityFilterLabel() {
+  const toggle = document.getElementById('user-university-toggle');
+  if (userSelectedUniversityFilters.length === 0) {
+    toggle.textContent = 'All Universities';
+  } else if (userSelectedUniversityFilters.length === 1) {
+    toggle.textContent = userSelectedUniversityFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedUniversityFilters.length} universities`;
+  }
+}
+
+// Initialize user multi-select dropdowns toggle behavior
+function initUserMultiSelectDropdowns() {
+  const multiSelects = [
+    { toggle: 'user-status-toggle', dropdown: 'user-status-dropdown', container: 'user-status-multiselect' },
+    { toggle: 'user-source-toggle', dropdown: 'user-source-dropdown', container: 'user-source-multiselect' },
+    { toggle: 'user-university-toggle', dropdown: 'user-university-dropdown', container: 'user-university-multiselect' }
+  ];
+
+  multiSelects.forEach(ms => {
+    const toggle = document.getElementById(ms.toggle);
+    const dropdown = document.getElementById(ms.dropdown);
+    if (toggle && dropdown) {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close other dropdowns
+        multiSelects.forEach(other => {
+          if (other.dropdown !== ms.dropdown) {
+            const otherDropdown = document.getElementById(other.dropdown);
+            if (otherDropdown) otherDropdown.style.display = 'none';
+          }
+        });
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    multiSelects.forEach(ms => {
+      const container = document.getElementById(ms.container);
+      const dropdown = document.getElementById(ms.dropdown);
+      if (container && dropdown && !container.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+  });
+}
+
+// ===== END USER MULTI-SELECT FILTER FUNCTIONS =====
 
 // Date filter event listener
 document.getElementById('filter-date').addEventListener('change', (e) => {
+  const customDateRange = document.getElementById('custom-date-range');
   const customDateInput = document.getElementById('filter-custom-date');
+  const customDateEndInput = document.getElementById('filter-custom-date-end');
   if (e.target.value === 'custom') {
-    customDateInput.style.display = 'block';
+    if (customDateRange) customDateRange.style.display = 'flex';
   } else {
-    customDateInput.style.display = 'none';
-    customDateInput.value = '';
+    if (customDateRange) customDateRange.style.display = 'none';
+    if (customDateInput) customDateInput.value = '';
+    if (customDateEndInput) customDateEndInput.value = '';
   }
   window.currentLeadsPage = 1;
   displayLeads();
 });
 
-// Custom date input event listener
+// Custom date range input event listeners
 document.getElementById('filter-custom-date').addEventListener('change', () => {
   window.currentLeadsPage = 1;
   displayLeads();
 });
+
+const customDateEndEl = document.getElementById('filter-custom-date-end');
+if (customDateEndEl) {
+  customDateEndEl.addEventListener('change', () => {
+    window.currentLeadsPage = 1;
+    displayLeads();
+  });
+}
 
 // User no action filter controls
 function toggleUserNoActionFilter() {

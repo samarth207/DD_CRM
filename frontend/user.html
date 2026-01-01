@@ -109,27 +109,49 @@
       
       <!-- Search & Filter Bar -->
       <div class="card" style="margin-bottom: 18px;">
-        <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 250px; position: relative;">
             <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af;"></i>
             <input type="text" id="filter-search" placeholder="Search by name, email, city, university, course..." style="width: 100%; padding: 11px 12px 11px 36px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;">
           </div>
-          <select id="filter-status" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px; min-width: 180px;">
-            <option value="">All Statuses</option>
-            <option value="Fresh">Fresh</option>
-            <option value="Buffer fresh">Buffer fresh</option>
-            <option value="Did not pick">Did not pick</option>
-            <option value="Request call back">Request call back</option>
-            <option value="Follow up">Follow up</option>
-            <option value="Counselled">Counselled</option>
-            <option value="Interested in next batch">Interested in next batch</option>
-            <option value="Registration fees paid">Registration fees paid</option>
-            <option value="Enrolled">Enrolled</option>
-            <option value="Junk/not interested">Junk/not interested</option>
-          </select>
-          <select id="filter-source" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px; min-width: 160px;">
-            <option value="">All Sources</option>
-          </select>
+          
+          <!-- Multi-select Status Filter -->
+          <div class="multi-select" id="user-status-multiselect" style="min-width: 150px;">
+            <div class="multi-select-toggle" id="user-status-toggle" style="padding: 10px 12px; font-size: 14px;">All Statuses</div>
+            <div class="multi-select-dropdown" id="user-status-dropdown" style="display:none; min-width: 220px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <button type="button" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="selectAllUserStatuses()">Select All</button>
+                <button type="button" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="clearUserStatusFilter()">Clear</button>
+              </div>
+              <label class="multi-select-item"><input type="checkbox" value="Fresh" onchange="updateUserStatusFilter()"> Fresh</label>
+              <label class="multi-select-item"><input type="checkbox" value="Buffer fresh" onchange="updateUserStatusFilter()"> Buffer fresh</label>
+              <label class="multi-select-item"><input type="checkbox" value="Did not pick" onchange="updateUserStatusFilter()"> Did not pick</label>
+              <label class="multi-select-item"><input type="checkbox" value="Request call back" onchange="updateUserStatusFilter()"> Request call back</label>
+              <label class="multi-select-item"><input type="checkbox" value="Follow up" onchange="updateUserStatusFilter()"> Follow up</label>
+              <label class="multi-select-item"><input type="checkbox" value="Counselled" onchange="updateUserStatusFilter()"> Counselled</label>
+              <label class="multi-select-item"><input type="checkbox" value="Interested in next batch" onchange="updateUserStatusFilter()"> Interested in next batch</label>
+              <label class="multi-select-item"><input type="checkbox" value="Registration fees paid" onchange="updateUserStatusFilter()"> Registration fees paid</label>
+              <label class="multi-select-item"><input type="checkbox" value="Enrolled" onchange="updateUserStatusFilter()"> Enrolled</label>
+              <label class="multi-select-item"><input type="checkbox" value="Junk/not interested" onchange="updateUserStatusFilter()"> Junk/not interested</label>
+            </div>
+          </div>
+          
+          <!-- Multi-select Source Filter -->
+          <div class="multi-select" id="user-source-multiselect" style="min-width: 140px;">
+            <div class="multi-select-toggle" id="user-source-toggle" style="padding: 10px 12px; font-size: 14px;">All Sources</div>
+            <div class="multi-select-dropdown" id="user-source-dropdown" style="display:none; min-width: 200px;"></div>
+          </div>
+          
+          <!-- Multi-select University Filter -->
+          <div class="multi-select" id="user-university-multiselect" style="min-width: 140px;">
+            <div class="multi-select-toggle" id="user-university-toggle" style="padding: 10px 12px; font-size: 14px;">All Universities</div>
+            <div class="multi-select-dropdown" id="user-university-dropdown" style="display:none; min-width: 250px;"></div>
+          </div>
+          
+          <!-- Hidden inputs for backward compatibility -->
+          <input type="hidden" id="filter-status" value="">
+          <input type="hidden" id="filter-source" value="">
+          
           <select id="filter-date" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px; min-width: 150px;">
             <option value="">All Time</option>
             <option value="today">Today</option>
@@ -137,9 +159,13 @@
             <option value="thisweek">This Week</option>
             <option value="lastweek">Last Week</option>
             <option value="thismonth">This Month</option>
-            <option value="custom">Custom Date</option>
+            <option value="custom">Custom Range</option>
           </select>
-          <input type="date" id="filter-custom-date" style="display: none; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;">
+          <div id="custom-date-range" style="display: none; align-items: center; gap: 6px;">
+            <input type="date" id="filter-custom-date" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;" title="From Date">
+            <span style="color: #6b7280; font-size: 13px;">to</span>
+            <input type="date" id="filter-custom-date-end" style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px;" title="To Date">
+          </div>
           <button onclick="toggleUserNoActionFilter()" class="btn btn-secondary" style="white-space: nowrap;">
             <i class="fas fa-user-clock"></i> No Action Taken
           </button>
