@@ -2092,27 +2092,8 @@ async function openLeadModal(leadId) {
       document.getElementById('admin-quick-datetime').value = localDateTime;
     }
 
-    // Display unified timeline
+    // Display unified timeline (includes status, notes, and assignment history)
     displayAdminTimeline(data);
-
-    // Assignment history
-    const assignContainer = document.getElementById('admin-assignment-history');
-    if (assignContainer) {
-      assignContainer.innerHTML = '';
-      const ah = data.assignmentHistory || [];
-      if (!ah.length) {
-        assignContainer.innerHTML = '<p style="color:#999;">No assignment history</p>';
-      } else {
-        ah.sort((a,b)=> new Date(b.changedAt) - new Date(a.changedAt)).forEach(entry => {
-          const div = document.createElement('div');
-          div.className = 'note-item';
-          const fromName = entry.fromUser ? entry.fromUser.name : 'None';
-          const toName = entry.toUser ? entry.toUser.name : 'Unknown';
-          div.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center;"><div class="note-content"><strong>${entry.action}</strong> ${fromName} ➝ ${toName}</div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div></div>`;
-          assignContainer.appendChild(div);
-        });
-      }
-    }
 
     document.getElementById('admin-lead-modal').style.display = 'flex';
   } catch (err) {
@@ -2133,7 +2114,8 @@ function displayAdminTimeline(data) {
         type: 'status',
         content: entry.status,
         date: new Date(entry.changedAt),
-        dateStr: entry.changedAt
+        dateStr: entry.changedAt,
+        changedBy: entry.changedBy
       });
     });
   }
@@ -2145,7 +2127,26 @@ function displayAdminTimeline(data) {
         type: 'note',
         content: note.content,
         date: new Date(note.createdAt),
-        dateStr: note.createdAt
+        dateStr: note.createdAt,
+        changedBy: note.createdBy
+      });
+    });
+  }
+  
+  // Add assignment history
+  if (data.assignmentHistory && data.assignmentHistory.length > 0) {
+    data.assignmentHistory.forEach(entry => {
+      const fromName = entry.fromUser ? entry.fromUser.name : 'None';
+      const toName = entry.toUser ? entry.toUser.name : 'Unknown';
+      timeline.push({
+        type: 'assignment',
+        content: `${entry.action}: ${fromName} → ${toName}`,
+        action: entry.action,
+        fromUser: entry.fromUser,
+        toUser: entry.toUser,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt,
+        changedBy: entry.changedBy
       });
     });
   }
@@ -2158,33 +2159,87 @@ function displayAdminTimeline(data) {
   // Sort by date (newest first)
   timeline.sort((a, b) => b.date - a.date);
   
+  // Helper to get "by" text
+  const getByText = (changedBy) => {
+    if (!changedBy) return '';
+    const name = changedBy.name || 'Unknown';
+    const role = changedBy.role === 'admin' ? 'Admin' : 'User';
+    return `<span style="font-size: 10px; color: #9ca3af; margin-left: 6px;">by ${role}: ${name}</span>`;
+  };
+  
   timeline.forEach(entry => {
     const item = document.createElement('div');
     item.className = 'note-item';
     
     if (entry.type === 'status') {
       item.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
-            <strong>Status changed to:</strong> 
+            <strong>Status:</strong> 
             <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+            ${getByText(entry.changedBy)}
           </div>
-          <div class="note-date">${entry.date.toLocaleString()}</div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
+        </div>
+      `;
+    } else if (entry.type === 'assignment') {
+      const fromName = entry.fromUser ? entry.fromUser.name : 'None';
+      const toName = entry.toUser ? entry.toUser.name : 'Unknown';
+      const actionLabel = entry.action === 'assigned' ? 'Assigned' : entry.action === 'transferred' ? 'Transferred' : entry.action === 'distributed' ? 'Distributed' : entry.action;
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-user-friends" style="color: #8b5cf6;"></i>
+            <strong>${actionLabel}:</strong> ${fromName} → ${toName}
+            ${getByText(entry.changedBy)}
+          </div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
         </div>
       `;
     } else {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; gap: 8px;">
-          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
-          <span>${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+            <span>${entry.content}</span>
+            ${getByText(entry.changedBy)}
+          </div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
       `;
     }
     
     container.appendChild(item);
   });
+}
+
+// Clear scheduled call for admin lead popup
+async function clearAdminSchedule() {
+  if (!currentLeadId) {
+    showTransferMessage('No lead selected', 'error');
+    return;
+  }
+  
+  try {
+    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nextCallDateTime: null })
+    });
+    
+    if (response.ok) {
+      document.getElementById('admin-quick-datetime').value = '';
+      showTransferMessage('Schedule cleared successfully', 'success');
+      await loadAllLeads();
+      adminLastCheckTimestamp = Date.now();
+    } else {
+      const data = await response.json();
+      showTransferMessage(data.message || 'Failed to clear schedule', 'error');
+    }
+  } catch (error) {
+    console.error('Error clearing schedule:', error);
+    showTransferMessage('Error clearing schedule', 'error');
+  }
 }
 
 async function quickUpdateAdminLead() {
@@ -2853,6 +2908,13 @@ async function resetAdminPassword() {
 // Store all leads data for filtering
 let allLeadsData = null;
 let allUserLeadsData = null;
+
+// Multi-select filter arrays
+let selectedStatusFilters = [];
+let selectedUserFilters = [];
+let selectedSourceFilters = [];
+let selectedUniversityFilters = [];
+let selectedTransferUserIds = [];
 
 // Date range calculation helper
 function getDateRange(filterValue, customStart = null, customEnd = null) {
@@ -3590,6 +3652,10 @@ function openCreateLeadModal() {
   modal.style.display = 'flex';
   document.getElementById('create-lead-form').reset();
   document.getElementById('create-lead-message').style.display = 'none';
+  document.getElementById('lead-custom-source').style.display = 'none';
+  
+  // Populate source dropdown with existing sources from database
+  populateAdminCreateLeadSources();
   
   // Populate user select with clearer display
   const assignedSelect = document.getElementById('lead-assigned-to');
@@ -3613,16 +3679,76 @@ function openCreateLeadModal() {
   });
 }
 
+// Populate source dropdown with existing sources from leads
+function populateAdminCreateLeadSources() {
+  const sourceSelect = document.getElementById('lead-source');
+  if (!sourceSelect || !allLeadsData) return;
+  
+  // Collect unique sources from existing leads
+  const existingSources = new Set();
+  allLeadsData.forEach(lead => {
+    if (lead.source) existingSources.add(lead.source);
+  });
+  
+  // Default sources
+  const defaultSources = ['Other', 'Meta', 'Google', 'LinkedIn', 'Instagram', 'Facebook', 'Direct', 'Referral', 'Website'];
+  
+  // Merge with existing sources
+  defaultSources.forEach(s => existingSources.add(s));
+  
+  // Sort and rebuild dropdown
+  const sortedSources = Array.from(existingSources).sort();
+  
+  sourceSelect.innerHTML = '';
+  sortedSources.forEach(source => {
+    const option = document.createElement('option');
+    option.value = source;
+    option.textContent = source;
+    sourceSelect.appendChild(option);
+  });
+  
+  // Add custom source option at the end
+  const customOption = document.createElement('option');
+  customOption.value = '__custom__';
+  customOption.textContent = '+ Add Custom Source';
+  sourceSelect.appendChild(customOption);
+}
+
+// Toggle custom source input for admin create lead
+function toggleAdminCustomSource() {
+  const sourceSelect = document.getElementById('lead-source');
+  const customInput = document.getElementById('lead-custom-source');
+  
+  if (sourceSelect.value === '__custom__') {
+    customInput.style.display = 'block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+  }
+}
+
 function closeCreateLeadModal() {
   const modal = document.getElementById('create-lead-modal');
   modal.style.display = 'none';
   document.getElementById('create-lead-form').reset();
   document.getElementById('create-lead-message').style.display = 'none';
+  document.getElementById('lead-custom-source').style.display = 'none';
 }
 
 // Create lead form submission
 document.getElementById('create-lead-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  
+  // Handle source - check if custom source is selected
+  let source = document.getElementById('lead-source').value;
+  if (source === '__custom__') {
+    source = document.getElementById('lead-custom-source').value.trim();
+    if (!source) {
+      showCreateLeadMessage('Please enter a custom source name', 'error');
+      return;
+    }
+  }
   
   const leadData = {
     name: document.getElementById('lead-name').value.trim(),
@@ -3632,7 +3758,7 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
     university: document.getElementById('lead-university').value.trim() || undefined,
     course: document.getElementById('lead-course').value.trim() || undefined,
     profession: document.getElementById('lead-profession').value.trim() || undefined,
-    source: document.getElementById('lead-source').value,
+    source: source,
     status: document.getElementById('lead-status').value,
     assignedTo: document.getElementById('lead-assigned-to').value
   };
@@ -3732,6 +3858,12 @@ async function loadAllLeads() {
       // Populate source filter with unique sources from leads
       populateAdminSourceFilter(allLeadsData);
       
+      // Build multi-select dropdowns
+      buildUserFilterMultiSelect();
+      buildSourceFilterMultiSelect();
+      buildUniversityFilterMultiSelect();
+      buildBulkTransferMultiSelect();
+      
       // Populate transfer filter user dropdowns with all users from the system
       const transferFromUser = document.getElementById('transfer-from-user');
       const transferToUser = document.getElementById('transfer-to-user');
@@ -3799,9 +3931,6 @@ function populateAdminSourceFilter(leads) {
 function renderAllLeads() {
   const tbody = document.getElementById('all-leads-tbody');
   const searchTerm = document.getElementById('all-leads-search').value.toLowerCase();
-  const statusFilter = document.getElementById('all-leads-status-filter').value;
-  const userFilter = document.getElementById('all-leads-user-filter').value;
-  const sourceFilter = document.getElementById('all-leads-source-filter').value;
 
   let filteredLeads = allLeadsData;
 
@@ -3819,22 +3948,27 @@ function renderAllLeads() {
     );
   }
 
-  // Apply status filter
-  if (statusFilter) {
-    filteredLeads = filteredLeads.filter(lead => lead.status === statusFilter);
+  // Apply multi-select status filter
+  if (selectedStatusFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedStatusFilters.includes(lead.status));
   }
 
-  // Apply user filter
-  if (userFilter) {
+  // Apply multi-select user filter
+  if (selectedUserFilters.length > 0) {
     filteredLeads = filteredLeads.filter(lead => {
       const userName = lead.assignedTo ? lead.assignedTo.name : 'Unassigned';
-      return userName === userFilter;
+      return selectedUserFilters.includes(userName);
     });
   }
 
-  // Apply source filter
-  if (sourceFilter) {
-    filteredLeads = filteredLeads.filter(lead => (lead.source || 'Other') === sourceFilter);
+  // Apply multi-select source filter
+  if (selectedSourceFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedSourceFilters.includes(lead.source || 'Other'));
+  }
+
+  // Apply multi-select university filter
+  if (selectedUniversityFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedUniversityFilters.includes(lead.university || 'Not Specified'));
   }
 
   // Apply transition filter if active
@@ -3874,7 +4008,30 @@ function clearAllFilters() {
   const searchInput = document.getElementById('all-leads-search');
   if (searchInput) searchInput.value = '';
   
-  // Reset all filter dropdowns
+  // Reset multi-select filters
+  selectedStatusFilters = [];
+  selectedUserFilters = [];
+  selectedSourceFilters = [];
+  selectedUniversityFilters = [];
+  
+  // Reset multi-select UI
+  const statusToggle = document.getElementById('status-multiselect-toggle');
+  if (statusToggle) statusToggle.textContent = 'All Statuses';
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const userToggle = document.getElementById('user-filter-toggle');
+  if (userToggle) userToggle.textContent = 'All Users';
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const sourceToggle = document.getElementById('source-multiselect-toggle');
+  if (sourceToggle) sourceToggle.textContent = 'All Sources';
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const universityToggle = document.getElementById('university-multiselect-toggle');
+  if (universityToggle) universityToggle.textContent = 'All Universities';
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Keep hidden inputs empty for backward compatibility
   const statusFilter = document.getElementById('all-leads-status-filter');
   if (statusFilter) statusFilter.value = '';
   
@@ -4386,13 +4543,13 @@ function selectLimitedLeads() {
   }
 }
 
-// Combined bulk action (status update + transfer)
+// Combined bulk action (status update + transfer with distribution)
 async function performBulkActions() {
   const status = document.getElementById('bulk-status-select').value;
-  const toUserId = document.getElementById('bulk-transfer-select').value;
+  const hasTransfer = selectedTransferUserIds.length > 0;
   
-  if (!status && !toUserId) {
-    showToast('No Action Selected', 'Please select a status to update and/or a user to transfer leads to', 'warning');
+  if (!status && !hasTransfer) {
+    showToast('No Action Selected', 'Please select a status to update and/or user(s) to transfer leads to', 'warning');
     return;
   }
 
@@ -4401,27 +4558,22 @@ async function performBulkActions() {
     return;
   }
 
-  // Check if trying to transfer leads already assigned to the target user
-  if (toUserId) {
-    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-    const alreadyAssigned = allLeadsData.filter(lead => 
-      selectedLeadIds.includes(lead._id) && 
-      lead.assignedTo && 
-      lead.assignedTo._id === toUserId
-    );
-    
-    if (alreadyAssigned.length > 0) {
-      showToast('Invalid Transfer', `${alreadyAssigned.length} lead(s) are already assigned to ${toUserName}. Please deselect them or choose a different user.`, 'error');
-      return;
-    }
-  }
-
   // Build confirmation message
   let actions = [];
   if (status) actions.push(`Update status to <strong>"${status}"</strong>`);
-  if (toUserId) {
-    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-    actions.push(`Transfer to <strong>${toUserName}</strong>`);
+  if (hasTransfer) {
+    if (selectedTransferUserIds.length === 1) {
+      const user = users.find(u => u._id === selectedTransferUserIds[0]);
+      actions.push(`Transfer to <strong>${user ? user.name : 'selected user'}</strong>`);
+    } else {
+      const userNames = selectedTransferUserIds.map(id => {
+        const user = users.find(u => u._id === id);
+        return user ? user.name : 'Unknown';
+      });
+      const leadsPerUser = Math.floor(selectedLeadIds.length / selectedTransferUserIds.length);
+      const remainder = selectedLeadIds.length % selectedTransferUserIds.length;
+      actions.push(`Distribute equally to <strong>${userNames.join(', ')}</strong><br><small>(~${leadsPerUser}${remainder > 0 ? '-' + (leadsPerUser + 1) : ''} leads each)</small>`);
+    }
   }
   
   const message = `${actions.join(' and ')} for <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #6b7280;">This action will be performed as a single optimized operation.</small>`;
@@ -4432,9 +4584,42 @@ async function performBulkActions() {
       
       const token = getToken();
       
-      // Use combined endpoint for better performance (single transaction)
-      if (status && toUserId) {
-        // Both status and transfer - use combined endpoint
+      // Handle distributed transfer (multiple users)
+      if (hasTransfer && selectedTransferUserIds.length > 1) {
+        // Distribute leads equally among selected users
+        const response = await fetch(`${API_URL}/admin/bulk-distribute-leads`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            leadIds: selectedLeadIds,
+            userIds: selectedTransferUserIds,
+            status: status || undefined
+          })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          hideLoading();
+          showToast('Distribution Failed', data.message || 'Failed to distribute leads', 'error');
+          return;
+        }
+        
+        hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
+        await loadAllLeads();
+        await refreshDashboard();
+        
+        document.getElementById('bulk-status-select').value = '';
+        clearTransferUsers();
+        
+        showToast('Distribution Completed', data.message || `Leads distributed to ${selectedTransferUserIds.length} users`, 'success');
+        
+      } else if (status && hasTransfer) {
+        // Both status and single user transfer - use combined endpoint
         const response = await fetch(`${API_URL}/admin/bulk-update-leads`, {
           method: 'POST',
           headers: {
@@ -4444,7 +4629,7 @@ async function performBulkActions() {
           body: JSON.stringify({
             leadIds: selectedLeadIds,
             status: status,
-            toUserId: toUserId
+            toUserId: selectedTransferUserIds[0]
           })
         });
 
@@ -4457,15 +4642,15 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
         
         document.getElementById('bulk-status-select').value = '';
-        document.getElementById('bulk-transfer-select').value = '';
+        clearTransferUsers();
         
-        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-        showToast('Actions Completed', `${data.modifiedCount} lead(s) updated: status to "${status}" and transferred to ${toUserName}. Selection preserved.`, 'success');
+        const user = users.find(u => u._id === selectedTransferUserIds[0]);
+        showToast('Actions Completed', `${data.modifiedCount} lead(s) updated: status to "${status}" and transferred to ${user ? user.name : 'user'}. Selection preserved.`, 'success');
         
       } else if (status) {
         // Status only
@@ -4490,14 +4675,14 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
         document.getElementById('bulk-status-select').value = '';
         showToast('Status Updated', `${statusData.updatedCount} lead(s) updated to "${status}". Selection preserved.`, 'success');
         
-      } else if (toUserId) {
-        // Transfer only
+      } else if (hasTransfer && selectedTransferUserIds.length === 1) {
+        // Single user transfer only
         const transferResponse = await fetch(`${API_URL}/admin/bulk-transfer-leads`, {
           method: 'POST',
           headers: {
@@ -4506,7 +4691,7 @@ async function performBulkActions() {
           },
           body: JSON.stringify({
             leadIds: selectedLeadIds,
-            toUserId: toUserId
+            toUserId: selectedTransferUserIds[0]
           })
         });
 
@@ -4519,13 +4704,13 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
-        document.getElementById('bulk-transfer-select').value = '';
+        clearTransferUsers();
         
-        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-        showToast('Transfer Completed', `${transferData.transferredCount} lead(s) transferred to ${toUserName}. Selection preserved.`, 'success');
+        const user = users.find(u => u._id === selectedTransferUserIds[0]);
+        showToast('Transfer Completed', `${transferData.transferredCount} lead(s) transferred to ${user ? user.name : 'user'}. Selection preserved.`, 'success');
       }
       
     } catch (error) {
@@ -4690,6 +4875,446 @@ function viewLeadDetail(leadId) {
   openLeadModal(leadId);
 }
 
+// ============ Multi-Select Filter Functions ============
+
+// Status multi-select functions
+function selectAllStatuses() {
+  const checkboxes = document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]');
+  selectedStatusFilters = [];
+  checkboxes.forEach(cb => {
+    cb.checked = true;
+    selectedStatusFilters.push(cb.value);
+  });
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function clearStatusFilter() {
+  selectedStatusFilters = [];
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function updateStatusFilter() {
+  selectedStatusFilters = [];
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedStatusFilters.push(cb.value);
+  });
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function updateStatusFilterLabel() {
+  const toggle = document.getElementById('status-multiselect-toggle');
+  if (selectedStatusFilters.length === 0) {
+    toggle.textContent = 'All Statuses';
+  } else if (selectedStatusFilters.length === 1) {
+    toggle.textContent = selectedStatusFilters[0];
+  } else {
+    toggle.textContent = `${selectedStatusFilters.length} statuses`;
+  }
+}
+
+// User filter multi-select functions
+function buildUserFilterMultiSelect() {
+  const toggle = document.getElementById('user-filter-toggle');
+  const dropdown = document.getElementById('user-filter-dropdown');
+  if (!toggle || !dropdown) return;
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add Unassigned option first
+  const unassignedItem = document.createElement('label');
+  unassignedItem.className = 'multi-select-item';
+  const unassignedCb = document.createElement('input');
+  unassignedCb.type = 'checkbox';
+  unassignedCb.value = 'Unassigned';
+  unassignedCb.onchange = () => updateUserFilters();
+  const unassignedSpan = document.createElement('span');
+  unassignedSpan.textContent = 'Unassigned';
+  unassignedItem.appendChild(unassignedCb);
+  unassignedItem.appendChild(unassignedSpan);
+  dropdown.appendChild(unassignedItem);
+
+  // Add all users
+  users.forEach(u => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = u.name;
+    cb.onchange = () => updateUserFilters();
+    const span = document.createElement('span');
+    span.textContent = `${u.name} (${u.email})`;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserFilters() {
+  selectedUserFilters = ['Unassigned'];
+  users.forEach(u => selectedUserFilters.push(u.name));
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = true);
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function clearUserFilters() {
+  selectedUserFilters = [];
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function updateUserFilters() {
+  selectedUserFilters = [];
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedUserFilters.push(cb.value);
+  });
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function updateUserFilterLabel() {
+  const toggle = document.getElementById('user-filter-toggle');
+  if (selectedUserFilters.length === 0) {
+    toggle.textContent = 'All Users';
+  } else if (selectedUserFilters.length === 1) {
+    toggle.textContent = selectedUserFilters[0];
+  } else {
+    toggle.textContent = `${selectedUserFilters.length} users`;
+  }
+}
+
+// Source filter multi-select functions
+function buildSourceFilterMultiSelect() {
+  const toggle = document.getElementById('source-multiselect-toggle');
+  const dropdown = document.getElementById('source-multiselect-dropdown');
+  if (!toggle || !dropdown || !allLeadsData) return;
+
+  // Collect unique sources
+  const sources = new Set();
+  allLeadsData.forEach(lead => {
+    sources.add(lead.source || 'Other');
+  });
+  const sortedSources = Array.from(sources).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllSourceFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearSourceFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all sources
+  sortedSources.forEach(source => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = source;
+    cb.onchange = () => updateSourceFilters();
+    const span = document.createElement('span');
+    span.textContent = source;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    selectedSourceFilters.push(cb.value);
+  });
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function clearSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function updateSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedSourceFilters.push(cb.value);
+  });
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function updateSourceFilterLabel() {
+  const toggle = document.getElementById('source-multiselect-toggle');
+  if (selectedSourceFilters.length === 0) {
+    toggle.textContent = 'All Sources';
+  } else if (selectedSourceFilters.length === 1) {
+    toggle.textContent = selectedSourceFilters[0];
+  } else {
+    toggle.textContent = `${selectedSourceFilters.length} sources`;
+  }
+}
+
+// University filter multi-select functions
+function buildUniversityFilterMultiSelect() {
+  const toggle = document.getElementById('university-multiselect-toggle');
+  const dropdown = document.getElementById('university-multiselect-dropdown');
+  if (!toggle || !dropdown || !allLeadsData) return;
+
+  // Collect unique universities
+  const universities = new Set();
+  allLeadsData.forEach(lead => {
+    universities.add(lead.university || 'Not Specified');
+  });
+  const sortedUniversities = Array.from(universities).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUniversityFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUniversityFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all universities
+  sortedUniversities.forEach(university => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = university;
+    cb.onchange = () => updateUniversityFilters();
+    const span = document.createElement('span');
+    span.textContent = university;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    selectedUniversityFilters.push(cb.value);
+  });
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function clearUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function updateUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedUniversityFilters.push(cb.value);
+  });
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function updateUniversityFilterLabel() {
+  const toggle = document.getElementById('university-multiselect-toggle');
+  if (selectedUniversityFilters.length === 0) {
+    toggle.textContent = 'All Universities';
+  } else if (selectedUniversityFilters.length === 1) {
+    toggle.textContent = selectedUniversityFilters[0];
+  } else {
+    toggle.textContent = `${selectedUniversityFilters.length} universities`;
+  }
+}
+
+// Bulk transfer multi-select functions
+function buildBulkTransferMultiSelect() {
+  const toggle = document.getElementById('bulk-transfer-toggle');
+  const dropdown = document.getElementById('bulk-transfer-dropdown');
+  if (!toggle || !dropdown) return;
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllTransferUsers();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearTransferUsers();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Info text
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size: 11px; color: #6b7280; padding: 4px 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 4px;';
+  info.innerHTML = '<i class="fas fa-info-circle"></i> Leads will be distributed equally among selected users';
+  dropdown.appendChild(info);
+
+  // Add all users
+  users.forEach(u => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = u._id;
+    cb.dataset.name = u.name;
+    cb.onchange = () => updateTransferUsers();
+    const span = document.createElement('span');
+    span.textContent = `${u.name} (${u.email})`;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllTransferUsers() {
+  selectedTransferUserIds = users.map(u => u._id);
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]').forEach(cb => cb.checked = true);
+  updateTransferUsersLabel();
+}
+
+function clearTransferUsers() {
+  selectedTransferUserIds = [];
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateTransferUsersLabel();
+}
+
+function updateTransferUsers() {
+  selectedTransferUserIds = [];
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedTransferUserIds.push(cb.value);
+  });
+  updateTransferUsersLabel();
+}
+
+function updateTransferUsersLabel() {
+  const toggle = document.getElementById('bulk-transfer-toggle');
+  if (selectedTransferUserIds.length === 0) {
+    toggle.textContent = 'Transfer To...';
+  } else if (selectedTransferUserIds.length === 1) {
+    const user = users.find(u => u._id === selectedTransferUserIds[0]);
+    toggle.textContent = user ? user.name : 'Transfer To...';
+  } else {
+    toggle.textContent = `${selectedTransferUserIds.length} users selected`;
+  }
+}
+
+// Initialize multi-select dropdowns toggle behavior
+function initMultiSelectDropdowns() {
+  const multiSelects = [
+    { toggle: 'status-multiselect-toggle', dropdown: 'status-multiselect-dropdown', container: 'status-multiselect' },
+    { toggle: 'user-filter-toggle', dropdown: 'user-filter-dropdown', container: 'user-filter-multiselect' },
+    { toggle: 'source-multiselect-toggle', dropdown: 'source-multiselect-dropdown', container: 'source-multiselect' },
+    { toggle: 'university-multiselect-toggle', dropdown: 'university-multiselect-dropdown', container: 'university-multiselect' },
+    { toggle: 'bulk-transfer-toggle', dropdown: 'bulk-transfer-dropdown', container: 'bulk-transfer-multiselect' }
+  ];
+
+  multiSelects.forEach(ms => {
+    const toggle = document.getElementById(ms.toggle);
+    const dropdown = document.getElementById(ms.dropdown);
+    if (toggle && dropdown) {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close other dropdowns
+        multiSelects.forEach(other => {
+          if (other.dropdown !== ms.dropdown) {
+            const otherDropdown = document.getElementById(other.dropdown);
+            if (otherDropdown) otherDropdown.style.display = 'none';
+          }
+        });
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    multiSelects.forEach(ms => {
+      const container = document.getElementById(ms.container);
+      const dropdown = document.getElementById(ms.dropdown);
+      if (container && dropdown && !container.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+  });
+}
+
 // Setup event listeners for filters
 // Debounce utility
 function debounce(func, wait) {
@@ -4706,9 +5331,6 @@ function debounce(func, wait) {
 
 // Event listeners for all leads filters with debouncing
 document.getElementById('all-leads-search').addEventListener('input', debounce(renderAllLeads, 300));
-document.getElementById('all-leads-status-filter').addEventListener('change', renderAllLeads);
-document.getElementById('all-leads-user-filter').addEventListener('change', renderAllLeads);
-document.getElementById('all-leads-source-filter').addEventListener('change', renderAllLeads);
 
 // Add escape key handler for create lead modal
 document.addEventListener('keydown', function(e) {
@@ -4727,4 +5349,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (allLeadsSection) {
     loadAllLeads();
   }
+  // Initialize multi-select dropdown toggle behavior
+  initMultiSelectDropdowns();
 });

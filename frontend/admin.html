@@ -216,30 +216,52 @@
         </h2>
         
         <!-- Filter and Search Controls -->
-        <div style="margin: 18px 0; display: flex; gap: 12px; flex-wrap: wrap;">
+        <div style="margin: 18px 0; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start;">
           <input type="text" id="all-leads-search" placeholder="Search by name, email, contact, city..." style="flex: 1; min-width: 250px; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
           
-          <select id="all-leads-status-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
-            <option value="">All Statuses</option>
-            <option value="Fresh">Fresh</option>
-            <option value="Buffer fresh">Buffer fresh</option>
-            <option value="Did not pick">Did not pick</option>
-            <option value="Request call back">Request call back</option>
-            <option value="Follow up">Follow up</option>
-            <option value="Counselled">Counselled</option>
-            <option value="Interested in next batch">Interested in next batch</option>
-            <option value="Registration fees paid">Registration fees paid</option>
-            <option value="Enrolled">Enrolled</option>
-            <option value="Junk/not interested">Junk/not interested</option>
-          </select>
+          <!-- Multi-select Status Filter -->
+          <div class="multi-select" id="status-multiselect" style="min-width: 150px;">
+            <div class="multi-select-toggle" id="status-multiselect-toggle" style="padding: 8px 12px; font-size: 13px;">All Statuses</div>
+            <div class="multi-select-dropdown" id="status-multiselect-dropdown" style="display:none; min-width: 220px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <button type="button" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="selectAllStatuses()">Select All</button>
+                <button type="button" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="clearStatusFilter()">Clear</button>
+              </div>
+              <label class="multi-select-item"><input type="checkbox" value="Fresh" onchange="updateStatusFilter()"> Fresh</label>
+              <label class="multi-select-item"><input type="checkbox" value="Buffer fresh" onchange="updateStatusFilter()"> Buffer fresh</label>
+              <label class="multi-select-item"><input type="checkbox" value="Did not pick" onchange="updateStatusFilter()"> Did not pick</label>
+              <label class="multi-select-item"><input type="checkbox" value="Request call back" onchange="updateStatusFilter()"> Request call back</label>
+              <label class="multi-select-item"><input type="checkbox" value="Follow up" onchange="updateStatusFilter()"> Follow up</label>
+              <label class="multi-select-item"><input type="checkbox" value="Counselled" onchange="updateStatusFilter()"> Counselled</label>
+              <label class="multi-select-item"><input type="checkbox" value="Interested in next batch" onchange="updateStatusFilter()"> Interested in next batch</label>
+              <label class="multi-select-item"><input type="checkbox" value="Registration fees paid" onchange="updateStatusFilter()"> Registration fees paid</label>
+              <label class="multi-select-item"><input type="checkbox" value="Enrolled" onchange="updateStatusFilter()"> Enrolled</label>
+              <label class="multi-select-item"><input type="checkbox" value="Junk/not interested" onchange="updateStatusFilter()"> Junk/not interested</label>
+            </div>
+          </div>
           
-          <select id="all-leads-user-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
-            <option value="">All Users</option>
-          </select>
+          <!-- Multi-select User Filter -->
+          <div class="multi-select" id="user-filter-multiselect" style="min-width: 140px;">
+            <div class="multi-select-toggle" id="user-filter-toggle" style="padding: 8px 12px; font-size: 13px;">All Users</div>
+            <div class="multi-select-dropdown" id="user-filter-dropdown" style="display:none; min-width: 250px;"></div>
+          </div>
           
-          <select id="all-leads-source-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
-            <option value="">All Sources</option>
-          </select>
+          <!-- Multi-select Source Filter -->
+          <div class="multi-select" id="source-multiselect" style="min-width: 140px;">
+            <div class="multi-select-toggle" id="source-multiselect-toggle" style="padding: 8px 12px; font-size: 13px;">All Sources</div>
+            <div class="multi-select-dropdown" id="source-multiselect-dropdown" style="display:none; min-width: 200px;"></div>
+          </div>
+          
+          <!-- Multi-select University Filter -->
+          <div class="multi-select" id="university-multiselect" style="min-width: 140px;">
+            <div class="multi-select-toggle" id="university-multiselect-toggle" style="padding: 8px 12px; font-size: 13px;">All Universities</div>
+            <div class="multi-select-dropdown" id="university-multiselect-dropdown" style="display:none; min-width: 250px;"></div>
+          </div>
+          
+          <!-- Hidden inputs for backward compatibility -->
+          <input type="hidden" id="all-leads-status-filter" value="">
+          <input type="hidden" id="all-leads-user-filter" value="">
+          <input type="hidden" id="all-leads-source-filter" value="">
           
           <button onclick="toggleTransitionFilter()" class="btn btn-secondary" style="font-size: 13px;">
             <i class="fas fa-exchange-alt"></i> Status Transition
@@ -500,9 +522,12 @@
               <option value="Junk/not interested">Junk/not interested</option>
             </select>
             
-            <select id="bulk-transfer-select" style="padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white;">
-              <option value="">Transfer To...</option>
-            </select>
+            <!-- Multi-select Transfer Users -->
+            <div class="multi-select" id="bulk-transfer-multiselect" style="min-width: 180px;">
+              <div class="multi-select-toggle" id="bulk-transfer-toggle" style="padding: 6px 10px; font-size: 12px;">Transfer To...</div>
+              <div class="multi-select-dropdown" id="bulk-transfer-dropdown" style="display:none; min-width: 250px;"></div>
+            </div>
+            <input type="hidden" id="bulk-transfer-select" value="">
             
             <button onclick="performBulkActions()" class="btn btn-primary" style="font-size: 12px; padding: 6px 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
               <i class="fas fa-bolt"></i> Apply Actions
@@ -911,7 +936,12 @@
             <label for="admin-quick-datetime" style="font-weight: 600; color: #78350f; margin-bottom: 4px; font-size: 12px;">
               <i class="fas fa-phone" style="color: #f59e0b;"></i> Next Call:
             </label>
-            <input type="datetime-local" id="admin-quick-datetime" style="width: 100%; padding: 8px; border: 2px solid #fcd34d; border-radius: 6px; font-size: 13px;">
+            <div style="display: flex; gap: 6px;">
+              <input type="datetime-local" id="admin-quick-datetime" style="flex: 1; padding: 8px; border: 2px solid #fcd34d; border-radius: 6px; font-size: 13px;">
+              <button type="button" onclick="clearAdminSchedule()" class="btn btn-secondary" style="padding: 6px 10px; font-size: 11px; white-space: nowrap;" title="Clear scheduled call">
+                <i class="fas fa-times"></i> Clear
+              </button>
+            </div>
           </div>
           
           <div class="form-group" style="margin-bottom: 0;">
@@ -940,11 +970,8 @@
         <div id="transfer-message" class="message" style="display: none; margin-top: 12px;"></div>
       </div>
       
-      <h3>Timeline</h3>
+      <h3>Timeline & Activity</h3>
       <div id="admin-timeline-container" class="notes-list"></div>
-      
-      <h3>Assignment History</h3>
-      <div id="admin-assignment-history" class="notes-list"></div>
     </div>
   </div>
   <!-- Status Leads Modal -->
@@ -1175,7 +1202,7 @@
 
         <div class="form-group">
           <label for="lead-source">Source</label>
-          <select id="lead-source">
+          <select id="lead-source" onchange="toggleAdminCustomSource()">
             <option value="Other">Other</option>
             <option value="Meta">Meta</option>
             <option value="Google">Google</option>
@@ -1185,7 +1212,9 @@
             <option value="Direct">Direct</option>
             <option value="Referral">Referral</option>
             <option value="Website">Website</option>
+            <option value="__custom__">+ Add Custom Source</option>
           </select>
+          <input type="text" id="lead-custom-source" placeholder="Enter custom source name..." style="display: none; margin-top: 8px;">
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">

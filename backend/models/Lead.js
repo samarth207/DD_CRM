@@ -13,7 +13,6 @@ const leadSchema = new mongoose.Schema({
   profession: { type: String },
   source: {
     type: String,
-    enum: ['Meta', 'Google', 'LinkedIn', 'Instagram', 'Facebook', 'Direct', 'Referral', 'Website', 'Other'],
     default: 'Other'
   },
   status: {
@@ -60,7 +59,7 @@ const leadSchema = new mongoose.Schema({
     }
   }],
   assignmentHistory: [{
-    action: { type: String, enum: ['assigned', 'transferred'], required: true },
+    action: { type: String, enum: ['assigned', 'transferred', 'distributed'], required: true },
     fromUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // null for initial assignment
     toUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     changedAt: { type: Date, default: Date.now },

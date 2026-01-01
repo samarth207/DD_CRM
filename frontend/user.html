@@ -522,14 +522,16 @@
         
         <div class="form-group">
           <label for="add-lead-source" style="font-weight: 600; color: #374151; margin-bottom: 6px; display: block;">Source</label>
-          <select id="add-lead-source" style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white;">
+          <select id="add-lead-source" onchange="toggleCustomSource()" style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white;">
             <option value="Other">Other</option>
             <option value="Website">Website</option>
             <option value="Referral">Referral</option>
             <option value="Social Media">Social Media</option>
             <option value="Email">Email</option>
             <option value="Phone">Phone</option>
+            <option value="__custom__">+ Add Custom Source</option>
           </select>
+          <input type="text" id="add-lead-custom-source" placeholder="Enter custom source name..." style="display: none; width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; margin-top: 8px;">
         </div>
         
         <div id="add-lead-message" style="display: none; padding: 12px; border-radius: 6px; margin-top: 10px;"></div>

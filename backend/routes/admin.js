@@ -599,7 +599,13 @@ router.get('/overall-stats', auth, adminAuth, async (req, res) => {
 // Get single lead with notes and status history
 router.get('/lead/:id', auth, adminAuth, async (req, res) => {
   try {
-    const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email').populate('assignmentHistory.fromUser', 'name email').populate('assignmentHistory.toUser', 'name email').populate('assignmentHistory.changedBy', 'name email');
+    const lead = await Lead.findById(req.params.id)
+      .populate('assignedTo', 'name email')
+      .populate('assignmentHistory.fromUser', 'name email')
+      .populate('assignmentHistory.toUser', 'name email')
+      .populate('assignmentHistory.changedBy', 'name email role')
+      .populate('statusHistory.changedBy', 'name email role')
+      .populate('notes.createdBy', 'name email role');
     if (!lead) {
       return res.status(404).json({ message: 'Lead not found' });
     }
@@ -613,6 +619,7 @@ router.get('/lead/:id', auth, adminAuth, async (req, res) => {
       course: lead.course,
       profession: lead.profession,
       status: lead.status,
+      source: lead.source,
       notes: lead.notes,
       statusHistory: lead.statusHistory,
       assignmentHistory: lead.assignmentHistory,
@@ -1088,7 +1095,8 @@ router.post('/bulk-update-status', auth, adminAuth, async (req, res) => {
         update: {
           $set: { 
             status: status,
-            updatedAt: now
+            updatedAt: now,
+            lastUpdatedBy: req.userId
           },
           $push: { 
             statusHistory: statusHistoryEntry 
@@ -1138,7 +1146,8 @@ router.post('/bulk-transfer-leads', auth, adminAuth, async (req, res) => {
         update: {
           $set: { 
             assignedTo: toUserId,
-            updatedAt: now
+            updatedAt: now,
+            lastUpdatedBy: req.userId
           },
           $push: { 
             assignmentHistory: {
@@ -1162,6 +1171,106 @@ router.post('/bulk-transfer-leads', auth, adminAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error transferring leads', error: error.message });
+  }
+});
+
+// Distribute leads equally among multiple users
+router.post('/bulk-distribute-leads', auth, adminAuth, async (req, res) => {
+  try {
+    const { leadIds, userIds, status } = req.body;
+    
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'Lead IDs array is required' });
+    }
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'User IDs array is required' });
+    }
+
+    // Verify all target users exist
+    const targetUsers = await User.find({ _id: { $in: userIds }, role: 'user' });
+    if (targetUsers.length !== userIds.length) {
+      return res.status(404).json({ message: 'One or more target users not found' });
+    }
+
+    // Validate status if provided
+    if (status) {
+      const validStatuses = [
+        'Fresh', 'Buffer fresh', 'Did not pick', 'Request call back',
+        'Follow up', 'Counselled', 'Interested in next batch',
+        'Registration fees paid', 'Enrolled', 'Junk/not interested'
+      ];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status value' });
+      }
+    }
+
+    // Fetch current leads for history tracking
+    const leads = await Lead.find({ _id: { $in: leadIds } }).select('_id assignedTo status').lean();
+    
+    // Distribute leads equally among users
+    const numUsers = userIds.length;
+    const now = new Date();
+    
+    const bulkOps = leads.map((lead, index) => {
+      const targetUserId = userIds[index % numUsers]; // Round-robin distribution
+      
+      const updateObj = {
+        $set: { 
+          assignedTo: targetUserId,
+          updatedAt: now,
+          lastUpdatedBy: req.userId
+        },
+        $push: { 
+          assignmentHistory: {
+            action: 'distributed',
+            fromUser: lead.assignedTo,
+            toUser: targetUserId,
+            changedBy: req.userId,
+            changedAt: now
+          }
+        }
+      };
+      
+      // Add status update if provided
+      if (status && lead.status !== status) {
+        updateObj.$set.status = status;
+        updateObj.$push.statusHistory = {
+          status: status,
+          changedAt: now,
+          changedBy: req.userId
+        };
+      }
+      
+      return {
+        updateOne: {
+          filter: { _id: lead._id },
+          update: updateObj
+        }
+      };
+    });
+    
+    const result = await Lead.bulkWrite(bulkOps, { ordered: false });
+
+    // Build distribution summary
+    const distribution = {};
+    leads.forEach((lead, index) => {
+      const targetUserId = userIds[index % numUsers];
+      const user = targetUsers.find(u => u._id.toString() === targetUserId);
+      if (user) {
+        distribution[user.name] = (distribution[user.name] || 0) + 1;
+      }
+    });
+
+    const summaryParts = Object.entries(distribution).map(([name, count]) => `${name}: ${count}`);
+    
+    res.json({ 
+      message: `${result.modifiedCount} lead(s) distributed equally. ${summaryParts.join(', ')}`,
+      modifiedCount: result.modifiedCount,
+      distribution: distribution
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error distributing leads', error: error.message });
   }
 });
 
@@ -1208,7 +1317,7 @@ router.post('/bulk-update-leads', auth, adminAuth, async (req, res) => {
     const now = new Date();
     const bulkOps = leadIds.map((leadId, index) => {
       const update = {
-        $set: { updatedAt: now }
+        $set: { updatedAt: now, lastUpdatedBy: req.userId }
       };
       const push = {};
 

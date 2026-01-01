@@ -2776,12 +2776,28 @@ function openAddLeadModal() {
   document.getElementById('add-lead-modal').style.display = 'flex';
   document.getElementById('add-lead-form').reset();
   document.getElementById('add-lead-message').style.display = 'none';
+  document.getElementById('add-lead-custom-source').style.display = 'none';
 }
 
 function closeAddLeadModal() {
   document.getElementById('add-lead-modal').style.display = 'none';
   document.getElementById('add-lead-form').reset();
   document.getElementById('add-lead-message').style.display = 'none';
+  document.getElementById('add-lead-custom-source').style.display = 'none';
+}
+
+// Toggle custom source input
+function toggleCustomSource() {
+  const sourceSelect = document.getElementById('add-lead-source');
+  const customInput = document.getElementById('add-lead-custom-source');
+  
+  if (sourceSelect.value === '__custom__') {
+    customInput.style.display = 'block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+  }
 }
 
 // Handle Add Lead Form Submission
@@ -2795,7 +2811,16 @@ document.getElementById('add-lead-form').addEventListener('submit', async (e) =>
   const profession = document.getElementById('add-lead-profession').value.trim();
   const university = document.getElementById('add-lead-university').value.trim();
   const course = document.getElementById('add-lead-course').value.trim();
-  const source = document.getElementById('add-lead-source').value;
+  
+  // Handle source - check if custom source is selected
+  let source = document.getElementById('add-lead-source').value;
+  if (source === '__custom__') {
+    source = document.getElementById('add-lead-custom-source').value.trim();
+    if (!source) {
+      showAddLeadMessage('Please enter a custom source name', 'error');
+      return;
+    }
+  }
   
   if (!name || !contact) {
     showAddLeadMessage('Name and Contact are required', 'error');
