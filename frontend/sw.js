@@ -1,7 +1,7 @@
-// Service Worker for DD CRM - Ultra-fast caching
-const CACHE_NAME = 'dd-crm-v1.2';
-const STATIC_CACHE = 'dd-crm-static-v1.2';
-const API_CACHE = 'dd-crm-api-v1.2';
+// Service Worker for DD CRM - Network-first caching for freshness
+const CACHE_NAME = 'dd-crm-v3.0';
+const STATIC_CACHE = 'dd-crm-static-v3.0';
+const API_CACHE = 'dd-crm-api-v3.0';
 
 // Static assets to cache immediately
 const STATIC_ASSETS = [
@@ -33,7 +33,9 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== STATIC_CACHE && cacheName !== API_CACHE) {
+          // Delete ALL old caches that don't match current version
+          if (cacheName !== STATIC_CACHE && cacheName !== API_CACHE && cacheName !== CACHE_NAME) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -42,7 +44,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network first for HTML/JS/CSS, cache fallback
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -75,14 +77,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets - Cache first, fallback to network
+  // Static assets - Network first, fallback to cache for freshness
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-
-      return fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         // Cache successful responses
         if (response.status === 200) {
           const responseClone = response.clone();
@@ -91,8 +89,13 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return response;
-      });
-    })
+      })
+      .catch(() => {
+        // Network failed, try cache
+        return caches.match(request).then((cached) => {
+          return cached || new Response('Offline', { status: 503 });
+        });
+      })
   );
 });
 
