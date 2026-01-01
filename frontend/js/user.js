@@ -110,6 +110,21 @@ function refreshUserData() {
   showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
 }
 
+// Format date/time in 12-hour format
+function formatDateTime(date) {
+  if (!(date instanceof Date)) {
+    date = new Date(date);
+  }
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
 // Show loading overlay
 function showLoading(message = 'Processing...', submessage = 'Please wait') {
   document.getElementById('loading-message').textContent = message;
@@ -1284,8 +1299,6 @@ async function openLeadModal(lead) {
 
 function displayFollowUpSchedule(nextCallDateTime) {
   const input = document.getElementById('modal-followup-datetime');
-  const display = document.getElementById('current-followup-display');
-  const displayTime = document.getElementById('followup-display-time');
   
   if (nextCallDateTime) {
     // Convert to local datetime format for input
@@ -1294,13 +1307,8 @@ function displayFollowUpSchedule(nextCallDateTime) {
       .toISOString()
       .slice(0, 16);
     input.value = localDateTime;
-    
-    // Show scheduled time
-    displayTime.textContent = date.toLocaleString();
-    display.style.display = 'block';
   } else {
     input.value = '';
-    display.style.display = 'none';
   }
 }
 
@@ -1429,9 +1437,13 @@ function displayTimeline(lead) {
     });
   }
   
-  // Add notes
+  // Add notes (but exclude 'Lead added by' notes as they're handled separately)
   if (lead.notes && lead.notes.length > 0) {
     lead.notes.forEach(note => {
+      // Skip 'Lead added by' notes as they're shown as special timeline entries
+      if (note.content && note.content.startsWith('Lead added by')) {
+        return;
+      }
       timeline.push({
         type: 'note',
         content: note.content,
@@ -1439,6 +1451,35 @@ function displayTimeline(lead) {
         dateStr: note.createdAt
       });
     });
+  }
+  
+  // Add assignment history (transfers)
+  if (lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+    lead.assignmentHistory.forEach(entry => {
+      const fromName = entry.fromUser && entry.fromUser.name ? entry.fromUser.name : 'None';
+      const toName = entry.toUser && entry.toUser.name ? entry.toUser.name : 'Unknown';
+      timeline.push({
+        type: 'transfer',
+        action: entry.action,
+        fromUser: fromName,
+        toUser: toName,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt
+      });
+    });
+  }
+  
+  // Check if lead was added manually (check first note for "Lead added by")
+  if (lead.notes && lead.notes.length > 0) {
+    const addedNote = lead.notes.find(note => note.content && note.content.startsWith('Lead added by'));
+    if (addedNote) {
+      timeline.push({
+        type: 'leadAdded',
+        content: addedNote.content,
+        date: new Date(addedNote.createdAt),
+        dateStr: addedNote.createdAt
+      });
+    }
   }
   
   if (timeline.length === 0) {
@@ -1455,20 +1496,46 @@ function displayTimeline(lead) {
     
     if (entry.type === 'status') {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
-          <strong>Status changed to:</strong> 
-          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+            <strong>Status changed to:</strong> 
+            <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else if (entry.type === 'transfer') {
+      const fromName = entry.fromUser ? entry.fromUser : 'None';
+      const toName = entry.toUser ? entry.toUser : 'Unknown';
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #f59e0b;"></i>
+            <strong>${entry.action}</strong> ${fromName} ➝ ${toName}
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
+        </div>
+      `;
+    } else if (entry.type === 'leadAdded') {
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-plus-circle" style="color: #10b981;"></i>
+            <span>${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
+        </div>
       `;
     } else {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; gap: 8px;">
-          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
-          <span>${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; gap: 8px;">
+            <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+            <span>${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
       `;
     }
     
@@ -1493,7 +1560,7 @@ function displayStatusHistory(history) {
     historyItem.className = 'note-item';
     historyItem.innerHTML = `
       <div class="note-content"><strong>Status changed to:</strong> <span class="lead-status status-${(entry.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.status}</span></div>
-      <div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>
+      <div class="note-date">${formatDateTime(entry.changedAt)}</div>
     `;
     container.appendChild(historyItem);
   });
@@ -1516,7 +1583,7 @@ function displayNotes(notes) {
     noteItem.className = 'note-item';
     noteItem.innerHTML = `
       <div class="note-content">${note.content}</div>
-      <div class="note-date">${new Date(note.createdAt).toLocaleString()}</div>
+      <div class="note-date">${formatDateTime(note.createdAt)}</div>
     `;
     container.appendChild(noteItem);
   });
@@ -1591,6 +1658,9 @@ async function quickUpdateLead() {
       showToast('Success', `Lead updated successfully! (${updates.join(', ')})`, 'success');
       // Close the modal after successful update
       closeModal();
+      
+      // Update timestamp to prevent self-notification
+      lastCheckTimestamp = Date.now();
       
       // Start checking for this reminder if scheduled
       if (dateTimeValue) {
@@ -2410,7 +2480,7 @@ function updateNotificationPanel() {
     list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No pending reminders</div>';
   } else {
     list.innerHTML = activeReminders.map(reminder => {
-      const timeStr = new Date(reminder.time).toLocaleString();
+      const timeStr = formatDateTime(reminder.time);
       const statusClass = reminder.isOverdue ? 'overdue' : 'upcoming';
       const statusText = reminder.isOverdue ? 'OVERDUE' : 'UPCOMING';
       
@@ -2701,3 +2771,106 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+// Add Lead Modal Functions
+function openAddLeadModal() {
+  document.getElementById('add-lead-modal').style.display = 'flex';
+  document.getElementById('add-lead-form').reset();
+  document.getElementById('add-lead-message').style.display = 'none';
+}
+
+function closeAddLeadModal() {
+  document.getElementById('add-lead-modal').style.display = 'none';
+  document.getElementById('add-lead-form').reset();
+  document.getElementById('add-lead-message').style.display = 'none';
+}
+
+// Handle Add Lead Form Submission
+document.getElementById('add-lead-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const name = document.getElementById('add-lead-name').value.trim();
+  const contact = document.getElementById('add-lead-contact').value.trim();
+  const email = document.getElementById('add-lead-email').value.trim();
+  const city = document.getElementById('add-lead-city').value.trim();
+  const profession = document.getElementById('add-lead-profession').value.trim();
+  const university = document.getElementById('add-lead-university').value.trim();
+  const course = document.getElementById('add-lead-course').value.trim();
+  const source = document.getElementById('add-lead-source').value;
+  
+  if (!name || !contact) {
+    showAddLeadMessage('Name and Contact are required', 'error');
+    return;
+  }
+  
+  try {
+    showLoading('Adding Lead...', 'Please wait');
+    
+    // Get current user info for the note
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const userName = userData.name || 'User';
+    
+    const leadData = {
+      name,
+      contact,
+      email: email || undefined,
+      city: city || undefined,
+      profession: profession || undefined,
+      university: university || undefined,
+      course: course || undefined,
+      source: source || 'Other',
+      status: 'Fresh',
+      addedByUser: true,
+      initialNote: `Lead added by ${userName}`
+    };
+    
+    const token = getToken();
+    const response = await fetch(`${API_URL}/leads/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(leadData)
+    });
+    
+    hideLoading();
+    
+    if (response.ok) {
+      showToast('Success', 'Lead added successfully', 'success');
+      closeAddLeadModal();
+      // Reload leads and update timestamp to prevent self-notification
+      await loadLeads();
+      lastCheckTimestamp = Date.now();
+    } else {
+      const error = await response.json();
+      showAddLeadMessage(error.message || 'Failed to add lead', 'error');
+    }
+  } catch (error) {
+    hideLoading();
+    console.error('Error adding lead:', error);
+    showAddLeadMessage('An error occurred while adding the lead', 'error');
+  }
+});
+
+function showAddLeadMessage(message, type) {
+  const msgDiv = document.getElementById('add-lead-message');
+  msgDiv.textContent = message;
+  msgDiv.className = type === 'error' ? 'error-message' : 'success-message';
+  msgDiv.style.display = 'block';
+  msgDiv.style.padding = '12px';
+  msgDiv.style.borderRadius = '6px';
+  msgDiv.style.backgroundColor = type === 'error' ? '#fee2e2' : '#d1fae5';
+  msgDiv.style.color = type === 'error' ? '#991b1b' : '#065f46';
+  msgDiv.style.border = type === 'error' ? '1px solid #fecaca' : '1px solid #a7f3d0';
+  
+  setTimeout(() => {
+    msgDiv.style.display = 'none';
+  }, 5000);
+}
+
+// Close modal on outside click
+document.getElementById('add-lead-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'add-lead-modal') {
+    closeAddLeadModal();
+  }
+});

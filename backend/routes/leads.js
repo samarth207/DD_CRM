@@ -268,4 +268,80 @@ router.delete('/:id/notes/:noteId', auth, async (req, res) => {
   }
 });
 
+// Add new lead (by user)
+router.post('/add', auth, async (req, res) => {
+  try {
+    const { name, contact, email, city, profession, university, course, source, status, initialNote } = req.body;
+    
+    // Validate required fields
+    if (!name || !contact) {
+      return res.status(400).json({ message: 'Name and contact are required' });
+    }
+    
+    // Check if lead with same contact already exists for this user
+    const existingLead = await Lead.findOne({ 
+      contact, 
+      assignedTo: req.userId 
+    });
+    
+    if (existingLead) {
+      return res.status(400).json({ message: 'A lead with this contact number already exists in your list' });
+    }
+    
+    // Create new lead
+    const now = new Date();
+    const lead = new Lead({
+      name,
+      contact,
+      email,
+      city,
+      profession,
+      university,
+      course,
+      source: source || 'Other',
+      status: status || 'Fresh',
+      assignedTo: req.userId,
+      createdAt: now,
+      updatedAt: now,
+      lastUpdatedBy: req.userId,
+      statusHistory: [{
+        status: status || 'Fresh',
+        changedBy: req.userId,
+        changedAt: now
+      }],
+      assignmentHistory: [{
+        action: 'assigned',
+        fromUser: null,
+        toUser: req.userId,
+        changedBy: req.userId,
+        changedAt: now
+      }]
+    });
+    
+    // Add initial note if provided
+    if (initialNote) {
+      lead.notes.push({
+        content: initialNote,
+        createdBy: req.userId,
+        createdAt: new Date()
+      });
+    }
+    
+    await lead.save();
+    
+    // Populate the lead data before sending response
+    await lead.populate('assignedTo', 'name email');
+    await lead.populate('assignmentHistory.fromUser', 'name email');
+    await lead.populate('assignmentHistory.toUser', 'name email');
+    await lead.populate('assignmentHistory.changedBy', 'name email');
+    
+    res.status(201).json(lead);
+  } catch (error) {
+    console.error('Error adding lead:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 module.exports = router;
+
+

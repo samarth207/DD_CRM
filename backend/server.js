@@ -8,8 +8,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from parent directory
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 // Initialize express
 const app = express();

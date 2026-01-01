@@ -986,6 +986,7 @@ router.post('/create-lead', auth, adminAuth, async (req, res) => {
     }
 
     const initialStatus = status || 'Fresh';
+    const now = new Date();
     
     const lead = new Lead({
       name: name.trim(),
@@ -999,16 +1000,19 @@ router.post('/create-lead', auth, adminAuth, async (req, res) => {
       status: initialStatus,
       assignedTo,
       createdBy: req.userId,
+      lastUpdatedBy: req.userId,
+      createdAt: now,
+      updatedAt: now,
       statusHistory: [{
         status: initialStatus,
-        changedAt: new Date(),
+        changedAt: now,
         changedBy: req.userId
       }],
       assignmentHistory: [{
         action: 'assigned',
         fromUser: null,
         toUser: assignedTo,
-        changedAt: new Date(),
+        changedAt: now,
         changedBy: req.userId
       }]
     });
@@ -1259,6 +1263,34 @@ router.post('/bulk-update-leads', auth, adminAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error updating leads', error: error.message });
+  }
+});
+
+// Check for updates - returns if any leads were updated by users (not by admin)
+router.get('/check-updates', auth, adminAuth, async (req, res) => {
+  try {
+    const lastCheck = req.query.lastCheck ? new Date(parseInt(req.query.lastCheck)) : new Date(0);
+    
+    // Count leads updated by users (not by admin) since last check
+    const updatedByUsers = await Lead.countDocuments({
+      updatedAt: { $gt: lastCheck },
+      lastUpdatedBy: { $ne: req.userId } // Not updated by this admin
+    });
+    
+    // Get the most recent timestamp
+    const latestLead = await Lead.findOne()
+      .sort({ updatedAt: -1 })
+      .select('updatedAt')
+      .lean();
+    
+    res.json({
+      hasUpdates: updatedByUsers > 0,
+      updateCount: updatedByUsers,
+      latestTimestamp: latestLead ? latestLead.updatedAt.getTime() : Date.now()
+    });
+  } catch (error) {
+    console.error('Error in admin check-updates:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 

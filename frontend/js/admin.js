@@ -8,6 +8,83 @@
   }
 })();
 
+// ===== ADMIN UPDATE POLLING SYSTEM =====
+let adminLastCheckTimestamp = Date.now();
+let adminUpdateCheckInterval = null;
+
+// Start polling for updates from users
+function startAdminUpdatePolling() {
+  // Check for updates every 20 seconds
+  adminUpdateCheckInterval = setInterval(checkForAdminUpdates, 20000);
+  console.log('Admin update polling started');
+}
+
+// Stop polling
+function stopAdminUpdatePolling() {
+  if (adminUpdateCheckInterval) {
+    clearInterval(adminUpdateCheckInterval);
+    adminUpdateCheckInterval = null;
+  }
+}
+
+// Check for updates from users
+async function checkForAdminUpdates() {
+  try {
+    // Don't check for updates if a modal is open (admin is editing)
+    const leadModal = document.getElementById('admin-lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      return; // Skip this check
+    }
+    
+    const response = await apiCall(`/admin/check-updates?lastCheck=${adminLastCheckTimestamp}`);
+    
+    if (!response) {
+      stopAdminUpdatePolling();
+      return;
+    }
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hasUpdates) {
+        showAdminUpdateNotification(data.updateCount || 1);
+        adminLastCheckTimestamp = data.latestTimestamp;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for admin updates:', error);
+  }
+}
+
+// Show admin update notification banner
+function showAdminUpdateNotification(updateCount) {
+  const banner = document.getElementById('admin-update-notification-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    const messageDiv = document.getElementById('admin-update-notification-message');
+    if (messageDiv) {
+      const message = `${updateCount} lead${updateCount > 1 ? 's have' : ' has'} been updated by users. Click refresh to see the latest changes.`;
+      messageDiv.textContent = message;
+    }
+  }
+}
+
+// Dismiss admin update notification
+function dismissAdminUpdateNotification() {
+  const banner = document.getElementById('admin-update-notification-banner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+  adminLastCheckTimestamp = Date.now();
+}
+
+// Refresh admin data
+async function refreshAdminData() {
+  dismissAdminUpdateNotification();
+  await refreshDashboard();
+  adminLastCheckTimestamp = Date.now();
+  showMessage('Data refreshed successfully', 'success');
+}
+
 // Modal functions for Add Brochure
 function openAddBrochureModal() {
   const modal = document.getElementById('add-brochure-modal');
@@ -266,6 +343,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Auto-load dashboard statistics on page load
   loadOverallStats();
+  
+  // Start polling for updates from users
+  startAdminUpdatePolling();
 });
 
 // Sidebar navigation handler
@@ -752,50 +832,125 @@ function applyUserLeadsFilters() {
     });
   }
   
-  // Update table
+  // Update table with pagination
   renderUserLeadsTable(filteredLeads);
 }
 
+// User Progress pagination variables
+let userLeadsCurrentPage = 1;
+let userLeadsPerPage = 25;
+let filteredUserLeadsData = [];
+
 function renderUserLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
-  tbody.innerHTML = '';
   
-  if (leads.length === 0) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">No leads found</td>`;
-    tbody.appendChild(tr);
+  // Store filtered data for pagination
+  filteredUserLeadsData = leads;
+  
+  // Update total stats
+  const totalElem = document.getElementById('user-leads-total');
+  if (totalElem) totalElem.textContent = filteredUserLeadsData.length;
+  
+  if (filteredUserLeadsData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
+    updateUserPaginationControls();
     return;
   }
   
-  leads.forEach(lead => {
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  const startIndex = (userLeadsCurrentPage - 1) * userLeadsPerPage;
+  const endIndex = Math.min(startIndex + userLeadsPerPage, filteredUserLeadsData.length);
+  const paginatedLeads = filteredUserLeadsData.slice(startIndex, endIndex);
+  
+  // Update showing stats
+  const showingElem = document.getElementById('user-leads-showing');
+  if (showingElem) showingElem.textContent = `${startIndex + 1}-${endIndex} of ${filteredUserLeadsData.length}`;
+  
+  tbody.innerHTML = '';
+  
+  paginatedLeads.forEach(lead => {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => openLeadModal(lead.id);
     tr.innerHTML = `
-      <td class="clickable" data-lead-id="${lead.id}">${lead.name || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.contact || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.email || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.city || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.university || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.course || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.profession || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.source || 'Other'}</td>
-      <td class="clickable" data-lead-id="${lead.id}"><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
+      <td>${lead.name || ''}</td>
+      <td>${lead.contact || ''}</td>
+      <td>${lead.email || ''}</td>
+      <td>${lead.city || 'N/A'}</td>
+      <td>${lead.university || 'N/A'}</td>
+      <td>${lead.course || 'N/A'}</td>
+      <td>${lead.profession || 'N/A'}</td>
+      <td>${lead.source || 'Other'}</td>
+      <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
+      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
     `;
     tbody.appendChild(tr);
   });
   
-  // Add click handlers
-  tbody.querySelectorAll('.clickable').forEach(cell => {
-    cell.addEventListener('click', () => {
-      const leadId = cell.getAttribute('data-lead-id');
-      openLeadModal(leadId);
-    });
-  });
+  // Update pagination controls
+  updateUserPaginationControls();
+}
+
+// Update user pagination controls
+function updateUserPaginationControls() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  
+  const currentPageElem = document.getElementById('user-current-page');
+  const totalPagesElem = document.getElementById('user-total-pages');
+  if (currentPageElem) currentPageElem.textContent = userLeadsCurrentPage;
+  if (totalPagesElem) totalPagesElem.textContent = totalPages || 1;
+  
+  // Enable/disable buttons
+  const firstBtn = document.getElementById('user-first-page-btn');
+  const prevBtn = document.getElementById('user-prev-page-btn');
+  const nextBtn = document.getElementById('user-next-page-btn');
+  const lastBtn = document.getElementById('user-last-page-btn');
+  
+  if (firstBtn) firstBtn.disabled = userLeadsCurrentPage === 1;
+  if (prevBtn) prevBtn.disabled = userLeadsCurrentPage === 1;
+  if (nextBtn) nextBtn.disabled = userLeadsCurrentPage >= totalPages;
+  if (lastBtn) lastBtn.disabled = userLeadsCurrentPage >= totalPages;
+}
+
+// User pagination functions
+function goToUserFirstPage() {
+  userLeadsCurrentPage = 1;
+  renderUserLeadsTable(filteredUserLeadsData);
+}
+
+function goToUserPrevPage() {
+  if (userLeadsCurrentPage > 1) {
+    userLeadsCurrentPage--;
+    renderUserLeadsTable(filteredUserLeadsData);
+  }
+}
+
+function goToUserNextPage() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  if (userLeadsCurrentPage < totalPages) {
+    userLeadsCurrentPage++;
+    renderUserLeadsTable(filteredUserLeadsData);
+  }
+}
+
+function goToUserLastPage() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  userLeadsCurrentPage = totalPages;
+  renderUserLeadsTable(filteredUserLeadsData);
+}
+
+function changeUserLeadsPerPage() {
+  const select = document.getElementById('user-leads-per-page');
+  userLeadsPerPage = parseInt(select.value);
+  userLeadsCurrentPage = 1;
+  renderUserLeadsTable(filteredUserLeadsData);
 }
 
 function clearUserLeadsFilter() {
   document.getElementById('user-lead-search').value = '';
   document.getElementById('user-status-filter').value = '';
+  userLeadsCurrentPage = 1;
   renderUserLeadsTable(currentUserLeads);
 }
 
@@ -958,6 +1113,7 @@ function createOverallStatusChart(statusBreakdown) {
       scales: {
         y: { 
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             maxTicksLimit: 8,
             callback: function(value) {
@@ -1217,6 +1373,7 @@ function openNewUserDistribution(status, sortedStatuses) {
       scales: {
         y: {
           beginAtZero: true,
+          grace: '5%',
           grid: {
             color: '#f3f4f6'
           },
@@ -1389,6 +1546,7 @@ function showFilteredLeadsGraph() {
       scales: {
         x: {
           beginAtZero: true,
+          grace: '5%',
           grid: {
             color: '#f3f4f6'
           },
@@ -1576,6 +1734,7 @@ function createStatusUserDistributionChart(userStats, status) {
       scales: {
         y: { 
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
@@ -1649,14 +1808,14 @@ function populateStatusDistributionTable(leads) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.innerHTML = `
-      <td>${lead.name || ''}</td>
-      <td>${lead.contact || ''}</td>
-      <td>${lead.email || ''}</td>
-      <td>${lead.city || ''}</td>
-      <td>${lead.university || ''}</td>
-      <td>${lead.course || ''}</td>
-      <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
-      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.name || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.contact || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.email || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.city || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.university || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.course || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
     tr.addEventListener('click', () => {
       closeStatusDistributionModal();
       openLeadModal(lead._id || lead.id);
@@ -1764,6 +1923,7 @@ function createUserLeadsChart(userStats) {
       scales: {
         y: {
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               // Format y-axis labels for readability
@@ -1858,6 +2018,7 @@ function updateStatusChart(statusBreakdown, allLeads) {
       scales: {
         y: {
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               // Format y-axis labels for readability
@@ -1947,7 +2108,7 @@ async function openLeadModal(leadId) {
           div.className = 'note-item';
           const fromName = entry.fromUser ? entry.fromUser.name : 'None';
           const toName = entry.toUser ? entry.toUser.name : 'Unknown';
-          div.innerHTML = `<div class="note-content"><strong>${entry.action}</strong> ${fromName} ➝ ${toName}</div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>`;
+          div.innerHTML = `<div style="display: flex; justify-content: space-between; align-items: center;"><div class="note-content"><strong>${entry.action}</strong> ${fromName} ➝ ${toName}</div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div></div>`;
           assignContainer.appendChild(div);
         });
       }
@@ -2003,12 +2164,14 @@ function displayAdminTimeline(data) {
     
     if (entry.type === 'status') {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
-          <strong>Status changed to:</strong> 
-          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+            <strong>Status changed to:</strong> 
+            <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+          </div>
+          <div class="note-date">${entry.date.toLocaleString()}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
       `;
     } else {
       item.innerHTML = `
@@ -3503,6 +3666,8 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
       await loadAllLeads(); // Refresh the leads list
       // Refresh entire dashboard to show new lead in charts and stats
       await refreshDashboard();
+      // Update admin polling timestamp to prevent self-notification
+      adminLastCheckTimestamp = Date.now();
       setTimeout(() => closeCreateLeadModal(), 1500);
     } else {
       showCreateLeadMessage(data.message || 'Failed to create lead', 'error');
@@ -3703,6 +3868,120 @@ function renderAllLeads() {
   renderPaginatedLeads();
 }
 
+// Clear all filters function
+function clearAllFilters() {
+  // Clear search input
+  const searchInput = document.getElementById('all-leads-search');
+  if (searchInput) searchInput.value = '';
+  
+  // Reset all filter dropdowns
+  const statusFilter = document.getElementById('all-leads-status-filter');
+  if (statusFilter) statusFilter.value = '';
+  
+  const userFilter = document.getElementById('all-leads-user-filter');
+  if (userFilter) userFilter.value = '';
+  
+  const sourceFilter = document.getElementById('all-leads-source-filter');
+  if (sourceFilter) sourceFilter.value = '';
+  
+  // Close and reset status transition filter
+  const transitionPanel = document.getElementById('transition-filter-panel');
+  if (transitionPanel) transitionPanel.style.display = 'none';
+  
+  const transitionFromStatus = document.getElementById('transition-from-status');
+  if (transitionFromStatus) transitionFromStatus.value = '';
+  
+  const transitionToStatus = document.getElementById('transition-to-status');
+  if (transitionToStatus) transitionToStatus.value = '';
+  
+  const transitionDateFilter = document.getElementById('transition-date-filter');
+  if (transitionDateFilter) transitionDateFilter.value = 'all';
+  
+  const transitionStartDate = document.getElementById('transition-start-date');
+  if (transitionStartDate) transitionStartDate.value = '';
+  
+  const transitionEndDate = document.getElementById('transition-end-date');
+  if (transitionEndDate) transitionEndDate.value = '';
+  
+  const transitionCustomDates = document.getElementById('transition-custom-dates');
+  if (transitionCustomDates) transitionCustomDates.style.display = 'none';
+  
+  const transitionStatus = document.getElementById('transition-filter-status');
+  if (transitionStatus) transitionStatus.innerHTML = '<i class="fas fa-info-circle"></i> Select status transition and time period, then click Apply.';
+  
+  statusTransitionFilterActive = false;
+  transitionFilterConfig = {
+    fromStatus: '',
+    toStatus: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  // Close and reset no action filter
+  const noActionPanel = document.getElementById('no-action-filter-panel');
+  if (noActionPanel) noActionPanel.style.display = 'none';
+  
+  const noActionPeriod = document.getElementById('no-action-period');
+  if (noActionPeriod) noActionPeriod.value = '7';
+  
+  const noActionStartDate = document.getElementById('no-action-start-date');
+  if (noActionStartDate) noActionStartDate.value = '';
+  
+  const noActionEndDate = document.getElementById('no-action-end-date');
+  if (noActionEndDate) noActionEndDate.value = '';
+  
+  const noActionCustomDates = document.getElementById('no-action-custom-dates');
+  if (noActionCustomDates) noActionCustomDates.style.display = 'none';
+  
+  const noActionStatus = document.getElementById('no-action-filter-status');
+  if (noActionStatus) noActionStatus.innerHTML = '<i class="fas fa-info-circle"></i> This will show leads assigned but not updated (no status changes or notes added) during the selected period.';
+  
+  noActionFilterActive = false;
+  noActionFilterConfig = {
+    days: 7,
+    startDate: null,
+    endDate: null
+  };
+  
+  // Close and reset transfer filter
+  const transferPanel = document.getElementById('transfer-filter-panel');
+  if (transferPanel) transferPanel.style.display = 'none';
+  
+  const transferFromUser = document.getElementById('transfer-from-user');
+  if (transferFromUser) transferFromUser.value = '';
+  
+  const transferToUser = document.getElementById('transfer-to-user');
+  if (transferToUser) transferToUser.value = '';
+  
+  const transferDateFilter = document.getElementById('transfer-date-filter');
+  if (transferDateFilter) transferDateFilter.value = 'all';
+  
+  const transferStartDate = document.getElementById('transfer-start-date');
+  if (transferStartDate) transferStartDate.value = '';
+  
+  const transferEndDate = document.getElementById('transfer-end-date');
+  if (transferEndDate) transferEndDate.value = '';
+  
+  const transferCustomDates = document.getElementById('transfer-custom-dates');
+  if (transferCustomDates) transferCustomDates.style.display = 'none';
+  
+  const transferStatus = document.getElementById('transfer-filter-status');
+  if (transferStatus) transferStatus.innerHTML = '<i class="fas fa-info-circle"></i> Select transfer criteria and time period, then click Apply.';
+  
+  transferFilterActive = false;
+  transferFilterConfig = {
+    fromUser: '',
+    toUser: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  // Reapply filters (which will show all leads since filters are cleared)
+  renderAllLeads();
+}
+
 // Check if a lead matches the status transition filter
 function checkLeadStatusTransition(lead, config) {
   if (!lead.statusHistory || lead.statusHistory.length === 0) {
@@ -3719,29 +3998,32 @@ function checkLeadStatusTransition(lead, config) {
     endDate = dateRange.end;
   }
 
-  // Check status history for transitions
-  for (let i = 1; i < lead.statusHistory.length; i++) {
-    const prevStatus = lead.statusHistory[i - 1].status;
-    const currStatus = lead.statusHistory[i].status;
-    const changeDate = new Date(lead.statusHistory[i].changedAt);
+  // Only check the latest 2 states (most recent transition)
+  // If there's only 1 status in history, there's no transition
+  if (lead.statusHistory.length < 2) {
+    return false;
+  }
 
-    // Check if date is in range
-    if (startDate && endDate) {
-      if (changeDate < startDate || changeDate > endDate) {
-        continue;
-      }
-    }
+  // Get the last two status entries (latest transition)
+  const secondLast = lead.statusHistory[lead.statusHistory.length - 2];
+  const last = lead.statusHistory[lead.statusHistory.length - 1];
+  
+  const prevStatus = secondLast.status;
+  const currStatus = last.status;
+  const changeDate = new Date(last.changedAt);
 
-    // Check if transition matches
-    const fromMatch = !config.fromStatus || prevStatus === config.fromStatus;
-    const toMatch = !config.toStatus || currStatus === config.toStatus;
-
-    if (fromMatch && toMatch) {
-      return true;
+  // Check if date is in range
+  if (startDate && endDate) {
+    if (changeDate < startDate || changeDate > endDate) {
+      return false;
     }
   }
 
-  return false;
+  // Check if transition matches
+  const fromMatch = !config.fromStatus || prevStatus === config.fromStatus;
+  const toMatch = !config.toStatus || currStatus === config.toStatus;
+
+  return fromMatch && toMatch;
 }
 
 // Get date range for transition filter
@@ -3799,6 +4081,11 @@ function renderPaginatedLeads() {
   
   // Update total stats
   document.getElementById('all-leads-total').textContent = filteredLeadsData.length;
+  // Also update the header count
+  const headerCount = document.getElementById('all-leads-total-header');
+  if (headerCount) {
+    headerCount.textContent = filteredLeadsData.length;
+  }
 
   // Uncheck select all checkbox
   const selectAllCheckbox = document.getElementById('select-all-leads');
@@ -3824,11 +4111,13 @@ function renderPaginatedLeads() {
   tbody.innerHTML = '';
   paginatedLeads.forEach(lead => {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => viewLeadDetail(lead._id);
     
     const isSelected = selectedLeadIds.includes(lead._id);
     
     tr.innerHTML = `
-      <td><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
+      <td onclick="event.stopPropagation();"><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
       <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.name || 'N/A'}">${lead.name || 'N/A'}</td>
       <td>${lead.contact || 'N/A'}</td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.city || 'N/A'}">${lead.city || 'N/A'}</td>
@@ -3837,11 +4126,6 @@ function renderPaginatedLeads() {
       <td><span class="status-badge status-${lead.status ? lead.status.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-') : 'unknown'}">${lead.status || 'Unknown'}</span></td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
       <td>${new Date(lead.updatedAt).toLocaleDateString()}</td>
-      <td>
-        <button onclick="viewLeadDetail('${lead._id}')" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
-          <i class="fas fa-eye"></i> View
-        </button>
-      </td>
     `;
     
     tbody.appendChild(tr);
