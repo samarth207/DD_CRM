@@ -347,7 +347,12 @@ router.post('/upload-leads', auth, adminAuth, excelUpload.single('file'), async 
 
     // NOW assign users to new leads in round-robin fashion
     newLeads.forEach((lead, index) => {
-      lead.assignedTo = userIds[index % userIds.length];
+      const assignedUserId = userIds[index % userIds.length];
+      lead.assignedTo = assignedUserId;
+      // Also update assignmentHistory to reflect the assigned user
+      if (lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+        lead.assignmentHistory[0].toUser = assignedUserId;
+      }
     });
 
     // Insert leads in batches to avoid memory issues

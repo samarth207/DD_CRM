@@ -171,6 +171,7 @@ function mapExcelRowToLead(row, options = {}) {
     status: status,
     assignedTo: assignedUserId,
     createdBy: createdBy,
+    lastUpdatedBy: createdBy, // Track that admin created this lead to avoid unnecessary notifications
     notes: notesContent ? [{
       content: notesContent,
       createdBy: createdBy
