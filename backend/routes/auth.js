@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { auth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -96,7 +97,8 @@ router.post('/login', async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        hasSeenTutorial: user.hasSeenTutorial || false
       }
     });
   } catch (error) {

@@ -1,3 +1,90 @@
+// Role validation - ensure admin is on admin page
+(function validateAdminRole() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (user && user.role !== 'admin') {
+    // User token found on admin page - redirect to user page
+    console.log('Non-admin user detected on admin page, redirecting to user page');
+    window.location.replace('user.html');
+  }
+})();
+
+// ===== ADMIN UPDATE POLLING SYSTEM =====
+let adminLastCheckTimestamp = Date.now();
+let adminUpdateCheckInterval = null;
+
+// Start polling for updates from users
+function startAdminUpdatePolling() {
+  // Check for updates every 20 seconds
+  adminUpdateCheckInterval = setInterval(checkForAdminUpdates, 20000);
+  console.log('Admin update polling started');
+}
+
+// Stop polling
+function stopAdminUpdatePolling() {
+  if (adminUpdateCheckInterval) {
+    clearInterval(adminUpdateCheckInterval);
+    adminUpdateCheckInterval = null;
+  }
+}
+
+// Check for updates from users
+async function checkForAdminUpdates() {
+  try {
+    // Don't check for updates if a modal is open (admin is editing)
+    const leadModal = document.getElementById('admin-lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      return; // Skip this check
+    }
+    
+    const response = await apiCall(`/admin/check-updates?lastCheck=${adminLastCheckTimestamp}`);
+    
+    if (!response) {
+      stopAdminUpdatePolling();
+      return;
+    }
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hasUpdates) {
+        showAdminUpdateNotification(data.updateCount || 1);
+        adminLastCheckTimestamp = data.latestTimestamp;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for admin updates:', error);
+  }
+}
+
+// Show admin update notification banner
+function showAdminUpdateNotification(updateCount) {
+  const banner = document.getElementById('admin-update-notification-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    const messageDiv = document.getElementById('admin-update-notification-message');
+    if (messageDiv) {
+      const message = `${updateCount} lead${updateCount > 1 ? 's have' : ' has'} been updated by users. Click refresh to see the latest changes.`;
+      messageDiv.textContent = message;
+    }
+  }
+}
+
+// Dismiss admin update notification
+function dismissAdminUpdateNotification() {
+  const banner = document.getElementById('admin-update-notification-banner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+  adminLastCheckTimestamp = Date.now();
+}
+
+// Refresh admin data
+async function refreshAdminData() {
+  dismissAdminUpdateNotification();
+  await refreshDashboard();
+  adminLastCheckTimestamp = Date.now();
+  showMessage('Data refreshed successfully', 'success');
+}
+
 // Modal functions for Add Brochure
 function openAddBrochureModal() {
   const modal = document.getElementById('add-brochure-modal');
@@ -31,21 +118,35 @@ function closeCreateUserModal() {
 // Global Escape key handler for all modals
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
-    // Close admin lead modal first (highest priority - on top of everything)
+    // Close filtered user distribution modal first (highest priority)
+    const filteredUserDistModal = document.getElementById('filtered-user-distribution-modal');
+    if (filteredUserDistModal && filteredUserDistModal.style.display === 'flex') {
+      closeFilteredUserDistributionModal();
+      return;
+    }
+    
+    // Close filtered leads graph modal
+    const filteredLeadsGraphModal = document.getElementById('filtered-leads-graph-modal');
+    if (filteredLeadsGraphModal && filteredLeadsGraphModal.style.display === 'flex') {
+      closeFilteredLeadsGraphModal();
+      return;
+    }
+    
+    // Close admin lead modal
     const adminLeadModal = document.getElementById('admin-lead-modal');
     if (adminLeadModal && adminLeadModal.style.display === 'flex') {
       closeAdminLeadModal();
       return;
     }
     
-    // Close status leads modal (when it's on top of status distribution)
+    // Close status leads modal
     const statusLeadsModal = document.getElementById('status-leads-modal');
     if (statusLeadsModal && statusLeadsModal.style.display === 'flex') {
       closeStatusLeadsModal();
       return;
     }
     
-    // Close status distribution modal (only if status leads is not open)
+    // Close status distribution modal
     const statusDistModal = document.getElementById('status-distribution-modal');
     if (statusDistModal && statusDistModal.style.display === 'flex') {
       closeStatusDistributionModal();
@@ -242,6 +343,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Auto-load dashboard statistics on page load
   loadOverallStats();
+  
+  // Start polling for updates from users
+  startAdminUpdatePolling();
 });
 
 // Sidebar navigation handler
@@ -276,7 +380,7 @@ function showSection(section) {
       targetId = 'overall-performance-card';
       break;
     case 'upload':
-      targetId = 'upload-form';
+      targetId = 'upload-leads-card';
       break;
     case 'brochures':
       targetId = 'manage-brochures-card';
@@ -287,17 +391,13 @@ function showSection(section) {
       loadUsers(); // Load users when navigating to settings
       break;
     case 'progress':
-      targetId = 'progress-user-select';
+      targetId = 'user-progress-card';
       // Check if section needs to be expanded
       const progressBody = document.getElementById('user-progress-body');
       if (progressBody && progressBody.style.display === 'none') {
         shouldExpand = true;
         expandFunction = toggleUserProgress;
       }
-      break;
-    case 'settings':
-      targetId = 'settings-card';
-      loadUsers(); // Load users when navigating to settings
       break;
   }
   
@@ -339,6 +439,7 @@ let currentStatusLeads = [];
 let selectedUserIds = [];
 let currentUserLeads = []; // store leads from selected user for client-side filtering
 let globalSearchTimer = null;
+let overallFilteredLeads = null; // store filtered leads from overall status distribution time range
 
 // Load users on page load
 loadUsers();
@@ -731,50 +832,125 @@ function applyUserLeadsFilters() {
     });
   }
   
-  // Update table
+  // Update table with pagination
   renderUserLeadsTable(filteredLeads);
 }
 
+// User Progress pagination variables
+let userLeadsCurrentPage = 1;
+let userLeadsPerPage = 25;
+let filteredUserLeadsData = [];
+
 function renderUserLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
-  tbody.innerHTML = '';
   
-  if (leads.length === 0) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="10" style="text-align: center; padding: 20px; color: #9ca3af;">No leads found</td>`;
-    tbody.appendChild(tr);
+  // Store filtered data for pagination
+  filteredUserLeadsData = leads;
+  
+  // Update total stats
+  const totalElem = document.getElementById('user-leads-total');
+  if (totalElem) totalElem.textContent = filteredUserLeadsData.length;
+  
+  if (filteredUserLeadsData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
+    updateUserPaginationControls();
     return;
   }
   
-  leads.forEach(lead => {
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  const startIndex = (userLeadsCurrentPage - 1) * userLeadsPerPage;
+  const endIndex = Math.min(startIndex + userLeadsPerPage, filteredUserLeadsData.length);
+  const paginatedLeads = filteredUserLeadsData.slice(startIndex, endIndex);
+  
+  // Update showing stats
+  const showingElem = document.getElementById('user-leads-showing');
+  if (showingElem) showingElem.textContent = `${startIndex + 1}-${endIndex} of ${filteredUserLeadsData.length}`;
+  
+  tbody.innerHTML = '';
+  
+  paginatedLeads.forEach(lead => {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => openLeadModal(lead.id);
     tr.innerHTML = `
-      <td class="clickable" data-lead-id="${lead.id}">${lead.name || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.contact || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.email || ''}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.city || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.university || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.course || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.profession || 'N/A'}</td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.source || 'Other'}</td>
-      <td class="clickable" data-lead-id="${lead.id}"><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
-      <td class="clickable" data-lead-id="${lead.id}">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
+      <td>${lead.name || ''}</td>
+      <td>${lead.contact || ''}</td>
+      <td>${lead.email || ''}</td>
+      <td>${lead.city || 'N/A'}</td>
+      <td>${lead.university || 'N/A'}</td>
+      <td>${lead.course || 'N/A'}</td>
+      <td>${lead.profession || 'N/A'}</td>
+      <td>${lead.source || 'Other'}</td>
+      <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
+      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
     `;
     tbody.appendChild(tr);
   });
   
-  // Add click handlers
-  tbody.querySelectorAll('.clickable').forEach(cell => {
-    cell.addEventListener('click', () => {
-      const leadId = cell.getAttribute('data-lead-id');
-      openLeadModal(leadId);
-    });
-  });
+  // Update pagination controls
+  updateUserPaginationControls();
+}
+
+// Update user pagination controls
+function updateUserPaginationControls() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  
+  const currentPageElem = document.getElementById('user-current-page');
+  const totalPagesElem = document.getElementById('user-total-pages');
+  if (currentPageElem) currentPageElem.textContent = userLeadsCurrentPage;
+  if (totalPagesElem) totalPagesElem.textContent = totalPages || 1;
+  
+  // Enable/disable buttons
+  const firstBtn = document.getElementById('user-first-page-btn');
+  const prevBtn = document.getElementById('user-prev-page-btn');
+  const nextBtn = document.getElementById('user-next-page-btn');
+  const lastBtn = document.getElementById('user-last-page-btn');
+  
+  if (firstBtn) firstBtn.disabled = userLeadsCurrentPage === 1;
+  if (prevBtn) prevBtn.disabled = userLeadsCurrentPage === 1;
+  if (nextBtn) nextBtn.disabled = userLeadsCurrentPage >= totalPages;
+  if (lastBtn) lastBtn.disabled = userLeadsCurrentPage >= totalPages;
+}
+
+// User pagination functions
+function goToUserFirstPage() {
+  userLeadsCurrentPage = 1;
+  renderUserLeadsTable(filteredUserLeadsData);
+}
+
+function goToUserPrevPage() {
+  if (userLeadsCurrentPage > 1) {
+    userLeadsCurrentPage--;
+    renderUserLeadsTable(filteredUserLeadsData);
+  }
+}
+
+function goToUserNextPage() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  if (userLeadsCurrentPage < totalPages) {
+    userLeadsCurrentPage++;
+    renderUserLeadsTable(filteredUserLeadsData);
+  }
+}
+
+function goToUserLastPage() {
+  const totalPages = Math.ceil(filteredUserLeadsData.length / userLeadsPerPage);
+  userLeadsCurrentPage = totalPages;
+  renderUserLeadsTable(filteredUserLeadsData);
+}
+
+function changeUserLeadsPerPage() {
+  const select = document.getElementById('user-leads-per-page');
+  userLeadsPerPage = parseInt(select.value);
+  userLeadsCurrentPage = 1;
+  renderUserLeadsTable(filteredUserLeadsData);
 }
 
 function clearUserLeadsFilter() {
   document.getElementById('user-lead-search').value = '';
   document.getElementById('user-status-filter').value = '';
+  userLeadsCurrentPage = 1;
   renderUserLeadsTable(currentUserLeads);
 }
 
@@ -844,6 +1020,9 @@ async function loadOverallStats() {
       
       document.getElementById('overall-total-users').textContent = data.totalUsers;
       document.getElementById('overall-total-leads').textContent = data.totalLeads;
+      
+      // Reset filtered leads to null for initial "All Time" view
+      overallFilteredLeads = null;
       
       // Create overall status chart
       createOverallStatusChart(data.statusBreakdown);
@@ -921,7 +1100,9 @@ function createOverallStatusChart(statusBreakdown) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
+        barDataLabels: true,
         legend: { display: false },
         tooltip: {
           callbacks: {
@@ -931,8 +1112,10 @@ function createOverallStatusChart(statusBreakdown) {
       },
       scales: {
         y: { 
-          beginAtZero: true, 
-          ticks: { 
+          beginAtZero: true,
+          grace: '5%',
+          ticks: {
+            maxTicksLimit: 8,
             callback: function(value) {
               // Format y-axis labels for readability
               if (value >= 1000000) {
@@ -1014,19 +1197,449 @@ function closeStatusLeadsModal() {
   modal.onclick = null;
 }
 
+// Filtered Leads Graph Functions
+let filteredLeadsChartInstance = null;
+let currentFilteredLeadsData = []; // Store filtered leads for user distribution
+
+// Custom plugin to display data labels on top of bars
+const barDataLabelsPlugin = {
+  id: 'barDataLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx, data, scales } = chart;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    
+    data.datasets.forEach((dataset, datasetIndex) => {
+      const meta = chart.getDatasetMeta(datasetIndex);
+      
+      meta.data.forEach((bar, index) => {
+        const value = dataset.data[index];
+        if (value === undefined || value === null) return;
+        
+        // Get bar position
+        const x = bar.x;
+        const y = bar.y;
+        
+        // Set text properties
+        ctx.fillStyle = '#1f2937';
+        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        
+        // Draw text above the bar
+        ctx.fillText(value, x, y - 8);
+      });
+    });
+  }
+};
+
+// Register plugin once globally for better performance
+if (typeof Chart !== 'undefined') {
+  Chart.register(barDataLabelsPlugin);
+}
+
+function closeFilteredLeadsGraphModal() {
+  document.getElementById('filtered-leads-graph-modal').style.display = 'none';
+  if (filteredLeadsChartInstance) {
+    filteredLeadsChartInstance.destroy();
+    filteredLeadsChartInstance = null;
+  }
+}
+
+let filteredUserDistributionChartInstance = null;
+
+function closeFilteredUserDistributionModal() {
+  document.getElementById('filtered-user-distribution-modal').style.display = 'none';
+  if (filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+    filteredUserDistributionChartInstance = null;
+  }
+}
+
+function showFilteredLeadsUserDistribution(status, sortedStatuses) {
+  const existingModal = document.getElementById('filtered-user-distribution-modal');
+  const isAlreadyOpen = existingModal && existingModal.style.display === 'flex';
+  
+  // If modal is already open, destroy the existing chart first
+  if (isAlreadyOpen && filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+    filteredUserDistributionChartInstance = null;
+  }
+  
+  // Now create the new chart for the selected status
+  openNewUserDistribution(status, sortedStatuses);
+}
+
+function openNewUserDistribution(status, sortedStatuses) {
+  const statusLeads = currentFilteredLeadsData.filter(lead => (lead.status || 'Unknown') === status);
+  
+  if (statusLeads.length === 0) {
+    alert('No leads found for this status.');
+    return;
+  }
+  
+  // Count leads by user
+  const userCounts = {};
+  statusLeads.forEach(lead => {
+    const userName = lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned';
+    userCounts[userName] = (userCounts[userName] || 0) + 1;
+  });
+  
+  // Sort by count descending
+  const sortedUsers = Object.entries(userCounts)
+    .sort((a, b) => b[1] - a[1]);
+  
+  // Prepare chart data
+  const labels = sortedUsers.map(([user]) => user);
+  const data = sortedUsers.map(([, count]) => count);
+  
+  // Define color for the status
+  const statusColors = {
+    'Fresh': '#6366f1',
+    'Buffer fresh': '#8b5cf6',
+    'Did not pick': '#ef4444',
+    'Request call back': '#f97316',
+    'Follow up': '#eab308',
+    'Counselled': '#06b6d4',
+    'Interested in next batch': '#3b82f6',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#8b5cf6',
+    'Junk/not interested': '#64748b',
+    'Unknown': '#9ca3af'
+  };
+  
+  const backgroundColor = statusColors[status] || '#6366f1';
+  
+  // Show modal
+  document.getElementById('filtered-user-distribution-modal').style.display = 'flex';
+  document.getElementById('filtered-user-dist-title').textContent = `User Distribution - ${status}`;
+  
+  // Destroy existing chart if any
+  if (filteredUserDistributionChartInstance) {
+    filteredUserDistributionChartInstance.destroy();
+  }
+  
+  // Create new chart
+  const ctx = document.getElementById('filtered-user-distribution-chart');
+  if (!ctx) return;
+  
+  filteredUserDistributionChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Number of Leads',
+        data: data,
+        backgroundColor: backgroundColor,
+        borderColor: backgroundColor,
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        barDataLabels: true,
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            padding: 15,
+            font: {
+              size: 13,
+              weight: '500'
+            },
+            color: '#4b5563'
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function(context) {
+              const value = context.parsed.y;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return `${value} leads (${percentage}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grace: '5%',
+          grid: {
+            color: '#f3f4f6'
+          },
+          ticks: {
+            font: { size: 12 },
+            color: '#6b7280'
+          }
+        },
+        x: {
+          ticks: {
+            font: { size: 12 },
+            color: '#4b5563',
+            padding: 8
+          },
+          grid: {
+            display: false
+          }
+        }
+      }
+    }
+  });
+  
+  // Update summary statistics
+  updateFilteredUserDistributionSummary(status, sortedUsers);
+}
+
+function updateFilteredUserDistributionSummary(status, sortedUsers) {
+  const statsDiv = document.getElementById('filtered-user-dist-stats');
+  statsDiv.innerHTML = '';
+  
+  const total = sortedUsers.reduce((sum, [, count]) => sum + count, 0);
+  const topUser = sortedUsers[0];
+  
+  // Add total leads stat
+  const totalDiv = document.createElement('div');
+  totalDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+  totalDiv.innerHTML = `
+    <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Total Leads</div>
+    <div style="font-size: 20px; font-weight: 700; color: #1f2937;">${total}</div>
+  `;
+  statsDiv.appendChild(totalDiv);
+  
+  // Add top user stat
+  if (topUser) {
+    const topDiv = document.createElement('div');
+    topDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    topDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Assigned Most</div>
+      <div style="font-size: 16px; font-weight: 600; color: #1f2937;">${topUser[0]}</div>
+      <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${topUser[1]} leads (${((topUser[1] / total) * 100).toFixed(1)}%)</div>
+    `;
+    statsDiv.appendChild(topDiv);
+  }
+  
+  // Add user breakdown
+  sortedUsers.slice(0, 3).forEach(([user, count]) => {
+    const userDiv = document.createElement('div');
+    userDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    const percentage = ((count / total) * 100).toFixed(1);
+    userDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${user}</div>
+      <div style="font-size: 18px; font-weight: 700; color: #1f2937;">${count}</div>
+      <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${percentage}% of total</div>
+    `;
+    statsDiv.appendChild(userDiv);
+  });
+}
+
+function showFilteredLeadsGraph() {
+  // Get currently filtered leads
+  if (!filteredLeadsData || filteredLeadsData.length === 0) {
+    alert('No leads to display. Please check your filters.');
+    return;
+  }
+  
+  // Store filtered leads for user distribution
+  currentFilteredLeadsData = [...filteredLeadsData];
+
+  // Count leads by status
+  const statusCounts = {};
+  filteredLeadsData.forEach(lead => {
+    const status = lead.status || 'Unknown';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  });
+
+  // Sort by count descending
+  const sortedStatuses = Object.entries(statusCounts)
+    .sort((a, b) => b[1] - a[1]);
+
+  // Prepare chart data
+  const labels = sortedStatuses.map(([status]) => status);
+  const data = sortedStatuses.map(([, count]) => count);
+
+  // Define colors for each status
+  const statusColors = {
+    'Fresh': '#6366f1',
+    'Buffer fresh': '#8b5cf6',
+    'Did not pick': '#ef4444',
+    'Request call back': '#f97316',
+    'Follow up': '#eab308',
+    'Counselled': '#06b6d4',
+    'Interested in next batch': '#3b82f6',
+    'Registration fees paid': '#10b981',
+    'Enrolled': '#8b5cf6',
+    'Junk/not interested': '#64748b',
+    'Unknown': '#9ca3af'
+  };
+
+  const backgroundColors = labels.map(label => statusColors[label] || '#6366f1');
+
+  // Show modal
+  document.getElementById('filtered-leads-graph-modal').style.display = 'flex';
+
+  // Destroy existing chart if any
+  if (filteredLeadsChartInstance) {
+    filteredLeadsChartInstance.destroy();
+  }
+
+  // Create new chart
+  const ctx = document.getElementById('filtered-leads-chart');
+  if (!ctx) return;
+
+  filteredLeadsChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Number of Leads',
+        data: data,
+        backgroundColor: backgroundColors,
+        borderColor: backgroundColors,
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        barDataLabels: true,
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            padding: 15,
+            font: {
+              size: 13,
+              weight: '500'
+            },
+            color: '#4b5563'
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function(context) {
+              const value = context.parsed.y;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return `${value} leads (${percentage}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grace: '5%',
+          grid: {
+            color: '#f3f4f6'
+          },
+          ticks: {
+            font: { size: 12 },
+            color: '#6b7280'
+          }
+        },
+        y: {
+          ticks: {
+            font: { size: 12 },
+            color: '#4b5563',
+            padding: 8
+          },
+          grid: {
+            display: false
+          }
+        }
+      },
+      onClick: (evt, elements) => {
+        if (!elements || elements.length === 0) return;
+        const idx = elements[0].index;
+        const status = labels[idx];
+        showFilteredLeadsUserDistribution(status, sortedStatuses);
+      }
+    }
+  });
+
+  // Update summary statistics
+  updateGraphSummary(filteredLeadsData, sortedStatuses);
+}
+
+function updateGraphSummary(leads, sortedStatuses) {
+  const statsDiv = document.getElementById('graph-stats');
+  statsDiv.innerHTML = '';
+
+  const total = leads.length;
+  const topStatus = sortedStatuses[0];
+  
+  // Add total leads stat
+  const totalDiv = document.createElement('div');
+  totalDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+  totalDiv.innerHTML = `
+    <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Total Leads</div>
+    <div style="font-size: 20px; font-weight: 700; color: #1f2937;">${total}</div>
+  `;
+  statsDiv.appendChild(totalDiv);
+
+  // Add top status stat
+  if (topStatus) {
+    const topDiv = document.createElement('div');
+    topDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    topDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Most Common</div>
+      <div style="font-size: 16px; font-weight: 600; color: #1f2937;">${topStatus[0]}</div>
+      <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${topStatus[1]} leads (${((topStatus[1] / total) * 100).toFixed(1)}%)</div>
+    `;
+    statsDiv.appendChild(topDiv);
+  }
+
+  // Add status breakdown
+  sortedStatuses.slice(0, 4).forEach(([status, count]) => {
+    const statDiv = document.createElement('div');
+    statDiv.style.cssText = 'background: white; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb;';
+    const percentage = ((count / total) * 100).toFixed(1);
+    statDiv.innerHTML = `
+      <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${status}</div>
+      <div style="font-size: 18px; font-weight: 700; color: #1f2937;">${count}</div>
+      <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${percentage}% of total</div>
+    `;
+    statsDiv.appendChild(statDiv);
+  });
+}
+
 // New drill-down modal functions
 async function showStatusDistributionModal(status) {
   try {
     const modal = document.getElementById('status-distribution-modal');
     if (!modal) return;
 
-    // Fetch all leads
-    const response = await apiCall('/admin/all-leads');
-    const data = await response.json();
-    if (!response.ok) return;
+    // Use filtered leads if available, otherwise fetch all leads
+    let allLeads;
+    if (overallFilteredLeads && overallFilteredLeads.length > 0) {
+      allLeads = overallFilteredLeads;
+    } else {
+      const response = await apiCall('/admin/all-leads');
+      const data = await response.json();
+      if (!response.ok) return;
+      allLeads = data.leads;
+    }
 
     // Filter leads by status
-    const leads = data.leads.filter(l => l.status === status);
+    const leads = allLeads.filter(l => l.status === status);
     currentStatusForDrillDown = status;
     currentStatusLeads = leads;
 
@@ -1108,7 +1721,9 @@ function createStatusUserDistributionChart(userStats, status) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
+        barDataLabels: true,
         legend: { display: false },
         tooltip: {
           callbacks: {
@@ -1119,6 +1734,7 @@ function createStatusUserDistributionChart(userStats, status) {
       scales: {
         y: { 
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
@@ -1192,14 +1808,14 @@ function populateStatusDistributionTable(leads) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.innerHTML = `
-      <td>${lead.name || ''}</td>
-      <td>${lead.contact || ''}</td>
-      <td>${lead.email || ''}</td>
-      <td>${lead.city || ''}</td>
-      <td>${lead.university || ''}</td>
-      <td>${lead.course || ''}</td>
-      <td>${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
-      <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.name || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.contact || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.email || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.city || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.university || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.course || ''}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.assignedTo && lead.assignedTo.name ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td style="padding: 10px 20px; white-space: nowrap;">${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>`;
     tr.addEventListener('click', () => {
       closeStatusDistributionModal();
       openLeadModal(lead._id || lead.id);
@@ -1291,6 +1907,7 @@ function createUserLeadsChart(userStats) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
         legend: {
           display: false
@@ -1306,6 +1923,7 @@ function createUserLeadsChart(userStats) {
       scales: {
         y: {
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               // Format y-axis labels for readability
@@ -1383,7 +2001,9 @@ function updateStatusChart(statusBreakdown, allLeads) {
     options: {
       responsive: true,
       maintainAspectRatio: true,
+      animation: false,
       plugins: {
+        barDataLabels: true,
         legend: {
           display: false
         },
@@ -1398,6 +2018,7 @@ function updateStatusChart(statusBreakdown, allLeads) {
       scales: {
         y: {
           beginAtZero: true,
+          grace: '5%',
           ticks: {
             callback: function(value) {
               // Format y-axis labels for readability
@@ -1456,6 +2077,12 @@ async function openLeadModal(leadId) {
     document.getElementById('admin-quick-note').value = '';
     document.getElementById('admin-quick-datetime').value = '';
     
+    // Clear transfer field
+    const transferUserSelect = document.getElementById('transfer-user-select');
+    if (transferUserSelect) {
+      transferUserSelect.value = '';
+    }
+    
     // Display next call date if exists
     if (data.nextCallDateTime) {
       const date = new Date(data.nextCallDateTime);
@@ -1465,27 +2092,8 @@ async function openLeadModal(leadId) {
       document.getElementById('admin-quick-datetime').value = localDateTime;
     }
 
-    // Display unified timeline
+    // Display unified timeline (includes status, notes, and assignment history)
     displayAdminTimeline(data);
-
-    // Assignment history
-    const assignContainer = document.getElementById('admin-assignment-history');
-    if (assignContainer) {
-      assignContainer.innerHTML = '';
-      const ah = data.assignmentHistory || [];
-      if (!ah.length) {
-        assignContainer.innerHTML = '<p style="color:#999;">No assignment history</p>';
-      } else {
-        ah.sort((a,b)=> new Date(b.changedAt) - new Date(a.changedAt)).forEach(entry => {
-          const div = document.createElement('div');
-          div.className = 'note-item';
-          const fromName = entry.fromUser ? entry.fromUser.name : 'None';
-          const toName = entry.toUser ? entry.toUser.name : 'Unknown';
-          div.innerHTML = `<div class="note-content"><strong>${entry.action}</strong> ${fromName} ➝ ${toName}</div><div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>`;
-          assignContainer.appendChild(div);
-        });
-      }
-    }
 
     document.getElementById('admin-lead-modal').style.display = 'flex';
   } catch (err) {
@@ -1506,7 +2114,8 @@ function displayAdminTimeline(data) {
         type: 'status',
         content: entry.status,
         date: new Date(entry.changedAt),
-        dateStr: entry.changedAt
+        dateStr: entry.changedAt,
+        changedBy: entry.changedBy
       });
     });
   }
@@ -1518,7 +2127,26 @@ function displayAdminTimeline(data) {
         type: 'note',
         content: note.content,
         date: new Date(note.createdAt),
-        dateStr: note.createdAt
+        dateStr: note.createdAt,
+        changedBy: note.createdBy
+      });
+    });
+  }
+  
+  // Add assignment history
+  if (data.assignmentHistory && data.assignmentHistory.length > 0) {
+    data.assignmentHistory.forEach(entry => {
+      const fromName = entry.fromUser ? entry.fromUser.name : 'None';
+      const toName = entry.toUser ? entry.toUser.name : 'Unknown';
+      timeline.push({
+        type: 'assignment',
+        content: `${entry.action}: ${fromName} → ${toName}`,
+        action: entry.action,
+        fromUser: entry.fromUser,
+        toUser: entry.toUser,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt,
+        changedBy: entry.changedBy
       });
     });
   }
@@ -1531,31 +2159,87 @@ function displayAdminTimeline(data) {
   // Sort by date (newest first)
   timeline.sort((a, b) => b.date - a.date);
   
+  // Helper to get "by" text
+  const getByText = (changedBy) => {
+    if (!changedBy) return '';
+    const name = changedBy.name || 'Unknown';
+    const role = changedBy.role === 'admin' ? 'Admin' : 'User';
+    return `<span style="font-size: 10px; color: #9ca3af; margin-left: 6px;">by ${role}: ${name}</span>`;
+  };
+  
   timeline.forEach(entry => {
     const item = document.createElement('div');
     item.className = 'note-item';
     
     if (entry.type === 'status') {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
-          <strong>Status changed to:</strong> 
-          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+            <strong>Status:</strong> 
+            <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+            ${getByText(entry.changedBy)}
+          </div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else if (entry.type === 'assignment') {
+      const fromName = entry.fromUser ? entry.fromUser.name : 'None';
+      const toName = entry.toUser ? entry.toUser.name : 'Unknown';
+      const actionLabel = entry.action === 'assigned' ? 'Assigned' : entry.action === 'transferred' ? 'Transferred' : entry.action === 'distributed' ? 'Distributed' : entry.action;
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-user-friends" style="color: #8b5cf6;"></i>
+            <strong>${actionLabel}:</strong> ${fromName} → ${toName}
+            ${getByText(entry.changedBy)}
+          </div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
+        </div>
       `;
     } else {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; gap: 8px;">
-          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
-          <span>${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div class="note-content" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+            <span>${entry.content}</span>
+            ${getByText(entry.changedBy)}
+          </div>
+          <div class="note-date" style="white-space: nowrap;">${entry.date.toLocaleString()}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
       `;
     }
     
     container.appendChild(item);
   });
+}
+
+// Clear scheduled call for admin lead popup
+async function clearAdminSchedule() {
+  if (!currentLeadId) {
+    showTransferMessage('No lead selected', 'error');
+    return;
+  }
+  
+  try {
+    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ nextCallDateTime: null })
+    });
+    
+    if (response.ok) {
+      document.getElementById('admin-quick-datetime').value = '';
+      showTransferMessage('Schedule cleared successfully', 'success');
+      await loadAllLeads();
+      adminLastCheckTimestamp = Date.now();
+    } else {
+      const data = await response.json();
+      showTransferMessage(data.message || 'Failed to clear schedule', 'error');
+    }
+  } catch (error) {
+    console.error('Error clearing schedule:', error);
+    showTransferMessage('Error clearing schedule', 'error');
+  }
 }
 
 async function quickUpdateAdminLead() {
@@ -1564,10 +2248,11 @@ async function quickUpdateAdminLead() {
   const newStatus = document.getElementById('admin-quick-status').value;
   const noteContent = document.getElementById('admin-quick-note').value.trim();
   const dateTimeValue = document.getElementById('admin-quick-datetime').value;
+  const newUserId = document.getElementById('transfer-user-select').value;
   
   // Validate that at least one field is being updated
-  if (!newStatus && !noteContent && !dateTimeValue) {
-    showTransferMessage('Please update at least one field (status, note, or schedule)', 'error');
+  if (!newStatus && !noteContent && !dateTimeValue && !newUserId) {
+    showTransferMessage('Please update at least one field (status, note, schedule, or transfer)', 'error');
     return;
   }
   
@@ -1582,34 +2267,80 @@ async function quickUpdateAdminLead() {
   }
   
   try {
-    const updateData = {};
-    if (newStatus) updateData.status = newStatus;
-    if (noteContent) updateData.note = noteContent;
-    if (dateTimeValue) {
-      updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+    let updateSuccess = false;
+    let transferSuccess = false;
+    const updates = [];
+    
+    // First, update lead details if any are provided
+    if (newStatus || noteContent || dateTimeValue) {
+      const updateData = {};
+      if (newStatus) {
+        updateData.status = newStatus;
+        updates.push('status');
+      }
+      if (noteContent) {
+        updateData.note = noteContent;
+        updates.push('note');
+      }
+      if (dateTimeValue) {
+        updateData.nextCallDateTime = new Date(dateTimeValue).toISOString();
+        updates.push('schedule');
+      }
+      
+      const response = await apiCall(`/admin/lead/${currentLeadId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
+      
+      if (response.ok) {
+        updateSuccess = true;
+      } else {
+        const data = await response.json();
+        showTransferMessage(data.message || 'Update failed', 'error');
+        return;
+      }
     }
     
-    const response = await apiCall(`/admin/lead/${currentLeadId}`, {
-      method: 'PUT',
-      body: JSON.stringify(updateData)
-    });
+    // Then, transfer lead if user is selected
+    if (newUserId) {
+      // Check if transfer is to same user
+      const leadResp = await apiCall(`/admin/lead/${currentLeadId}`);
+      const leadData = await leadResp.json();
+      if (leadResp.ok && leadData.assignedTo && leadData.assignedTo._id === newUserId) {
+        showTransferMessage('Lead is already assigned to this user', 'error');
+        return;
+      }
+
+      const transferData = { newUserId };
+
+      const response = await apiCall(`/admin/transfer-lead/${currentLeadId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(transferData)
+      });
+      
+      if (response.ok) {
+        transferSuccess = true;
+        updates.push('transferred');
+      } else {
+        const data = await response.json();
+        showTransferMessage(data.message || 'Transfer failed', 'error');
+        return;
+      }
+    }
     
-    const data = await response.json();
-    
-    if (response.ok) {
+    // If we got here, everything succeeded
+    if (updateSuccess || transferSuccess) {
       // Clear form fields
       document.getElementById('admin-quick-status').value = '';
       document.getElementById('admin-quick-note').value = '';
-      
-      const updates = [];
-      if (newStatus) updates.push('status');
-      if (noteContent) updates.push('note');
-      if (dateTimeValue) updates.push('schedule');
+      document.getElementById('transfer-user-select').value = '';
       
       showTransferMessage(`Lead updated successfully! (${updates.join(', ')})`, 'success');
       
-      // Refresh the lead modal
-      await openLeadModal(currentLeadId);
+      // Close the modal after successful update
+      setTimeout(() => {
+        closeAdminLeadModal();
+      }, 1000);
       
       // Refresh entire dashboard dynamically
       await refreshDashboard();
@@ -1958,6 +2689,8 @@ function closeAdminLeadModal() {
 async function transferLead() {
   if (!currentLeadId) return;
   const newUserId = document.getElementById('transfer-user-select').value;
+  const transferNote = document.getElementById('transfer-note').value.trim();
+  
   if (!newUserId) {
     showTransferMessage('Please select a user to transfer', 'error');
     return;
@@ -1971,13 +2704,20 @@ async function transferLead() {
       return;
     }
 
+    const transferData = { newUserId };
+    if (transferNote) {
+      transferData.note = transferNote;
+    }
+
     const response = await apiCall(`/admin/transfer-lead/${currentLeadId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ newUserId })
+      body: JSON.stringify(transferData)
     });
     const data = await response.json();
     if (response.ok) {
-      showTransferMessage('Lead transferred successfully', 'success');
+      showTransferMessage('Lead transferred successfully' + (transferNote ? ' with note' : ''), 'success');
+      // Clear the transfer note field
+      document.getElementById('transfer-note').value = '';
       // Refresh modal content to reflect updated assignment history
       await openLeadModal(currentLeadId);
       // Refresh entire dashboard dynamically
@@ -2169,6 +2909,13 @@ async function resetAdminPassword() {
 let allLeadsData = null;
 let allUserLeadsData = null;
 
+// Multi-select filter arrays
+let selectedStatusFilters = [];
+let selectedUserFilters = [];
+let selectedSourceFilters = [];
+let selectedUniversityFilters = [];
+let selectedTransferUserIds = [];
+
 // Date range calculation helper
 function getDateRange(filterValue, customStart = null, customEnd = null) {
   const now = new Date();
@@ -2265,6 +3012,9 @@ async function applyOverallDateFilter(filterValue) {
     const dateRange = getDateRange(filterValue);
     const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
     
+    // Store filtered leads globally for use in drill-down modals
+    overallFilteredLeads = filteredLeads;
+    
     // Calculate status breakdown
     const statusBreakdown = {};
     filteredLeads.forEach(lead => {
@@ -2310,6 +3060,9 @@ async function applyOverallDateFilterCustom(startDate, endDate) {
     
     const dateRange = getDateRange('custom', startDate, endDate);
     const filteredLeads = filterLeadsByDateRange(allLeadsData, dateRange);
+    
+    // Store filtered leads globally for use in drill-down modals
+    overallFilteredLeads = filteredLeads;
     
     const statusBreakdown = {};
     filteredLeads.forEach(lead => {
@@ -2899,16 +3652,80 @@ function openCreateLeadModal() {
   modal.style.display = 'flex';
   document.getElementById('create-lead-form').reset();
   document.getElementById('create-lead-message').style.display = 'none';
+  document.getElementById('lead-custom-source').style.display = 'none';
   
-  // Populate user select
+  // Populate source dropdown with existing sources from database
+  populateAdminCreateLeadSources();
+  
+  // Populate user select with clearer display
   const assignedSelect = document.getElementById('lead-assigned-to');
-  assignedSelect.innerHTML = '<option value="">Select user...</option>';
+  assignedSelect.innerHTML = '<option value="">-- Select User to Assign --</option>';
+  
+  if (!users || users.length === 0) {
+    console.error('No users available for assignment');
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No users available (please refresh page)';
+    option.disabled = true;
+    assignedSelect.appendChild(option);
+    return;
+  }
+  
   users.forEach(u => {
     const option = document.createElement('option');
     option.value = u._id;
-    option.textContent = `${u.name} (${u.email})`;
+    option.textContent = u.name; // Show only name for clarity
     assignedSelect.appendChild(option);
   });
+}
+
+// Populate source dropdown with existing sources from leads
+function populateAdminCreateLeadSources() {
+  const sourceSelect = document.getElementById('lead-source');
+  if (!sourceSelect || !allLeadsData) return;
+  
+  // Collect unique sources from existing leads
+  const existingSources = new Set();
+  allLeadsData.forEach(lead => {
+    if (lead.source) existingSources.add(lead.source);
+  });
+  
+  // Default sources
+  const defaultSources = ['Other', 'Meta', 'Google', 'LinkedIn', 'Instagram', 'Facebook', 'Direct', 'Referral', 'Website'];
+  
+  // Merge with existing sources
+  defaultSources.forEach(s => existingSources.add(s));
+  
+  // Sort and rebuild dropdown
+  const sortedSources = Array.from(existingSources).sort();
+  
+  sourceSelect.innerHTML = '';
+  sortedSources.forEach(source => {
+    const option = document.createElement('option');
+    option.value = source;
+    option.textContent = source;
+    sourceSelect.appendChild(option);
+  });
+  
+  // Add custom source option at the end
+  const customOption = document.createElement('option');
+  customOption.value = '__custom__';
+  customOption.textContent = '+ Add Custom Source';
+  sourceSelect.appendChild(customOption);
+}
+
+// Toggle custom source input for admin create lead
+function toggleAdminCustomSource() {
+  const sourceSelect = document.getElementById('lead-source');
+  const customInput = document.getElementById('lead-custom-source');
+  
+  if (sourceSelect.value === '__custom__') {
+    customInput.style.display = 'block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+  }
 }
 
 function closeCreateLeadModal() {
@@ -2916,11 +3733,22 @@ function closeCreateLeadModal() {
   modal.style.display = 'none';
   document.getElementById('create-lead-form').reset();
   document.getElementById('create-lead-message').style.display = 'none';
+  document.getElementById('lead-custom-source').style.display = 'none';
 }
 
 // Create lead form submission
 document.getElementById('create-lead-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  
+  // Handle source - check if custom source is selected
+  let source = document.getElementById('lead-source').value;
+  if (source === '__custom__') {
+    source = document.getElementById('lead-custom-source').value.trim();
+    if (!source) {
+      showCreateLeadMessage('Please enter a custom source name', 'error');
+      return;
+    }
+  }
   
   const leadData = {
     name: document.getElementById('lead-name').value.trim(),
@@ -2930,7 +3758,7 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
     university: document.getElementById('lead-university').value.trim() || undefined,
     course: document.getElementById('lead-course').value.trim() || undefined,
     profession: document.getElementById('lead-profession').value.trim() || undefined,
-    source: document.getElementById('lead-source').value,
+    source: source,
     status: document.getElementById('lead-status').value,
     assignedTo: document.getElementById('lead-assigned-to').value
   };
@@ -2964,6 +3792,8 @@ document.getElementById('create-lead-form').addEventListener('submit', async (e)
       await loadAllLeads(); // Refresh the leads list
       // Refresh entire dashboard to show new lead in charts and stats
       await refreshDashboard();
+      // Update admin polling timestamp to prevent self-notification
+      adminLastCheckTimestamp = Date.now();
       setTimeout(() => closeCreateLeadModal(), 1500);
     } else {
       showCreateLeadMessage(data.message || 'Failed to create lead', 'error');
@@ -3025,6 +3855,15 @@ async function loadAllLeads() {
         });
       }
       
+      // Populate source filter with unique sources from leads
+      populateAdminSourceFilter(allLeadsData);
+      
+      // Build multi-select dropdowns
+      buildUserFilterMultiSelect();
+      buildSourceFilterMultiSelect();
+      buildUniversityFilterMultiSelect();
+      buildBulkTransferMultiSelect();
+      
       // Populate transfer filter user dropdowns with all users from the system
       const transferFromUser = document.getElementById('transfer-from-user');
       const transferToUser = document.getElementById('transfer-to-user');
@@ -3068,12 +3907,30 @@ async function loadAllLeads() {
   }
 }
 
+// Populate source filter with unique sources
+function populateAdminSourceFilter(leads) {
+  const sourceFilter = document.getElementById('all-leads-source-filter');
+  const currentSelection = sourceFilter.value;
+  
+  // Get unique sources
+  const sources = [...new Set(leads.map(lead => lead.source || 'Other'))].sort();
+  
+  sourceFilter.innerHTML = '<option value="">All Sources</option>';
+  sources.forEach(source => {
+    const option = document.createElement('option');
+    option.value = source;
+    option.textContent = source;
+    sourceFilter.appendChild(option);
+  });
+  
+  // Restore previous selection
+  sourceFilter.value = currentSelection;
+}
+
 // Render all leads with filters applied
 function renderAllLeads() {
   const tbody = document.getElementById('all-leads-tbody');
   const searchTerm = document.getElementById('all-leads-search').value.toLowerCase();
-  const statusFilter = document.getElementById('all-leads-status-filter').value;
-  const userFilter = document.getElementById('all-leads-user-filter').value;
 
   let filteredLeads = allLeadsData;
 
@@ -3091,17 +3948,27 @@ function renderAllLeads() {
     );
   }
 
-  // Apply status filter
-  if (statusFilter) {
-    filteredLeads = filteredLeads.filter(lead => lead.status === statusFilter);
+  // Apply multi-select status filter
+  if (selectedStatusFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedStatusFilters.includes(lead.status));
   }
 
-  // Apply user filter
-  if (userFilter) {
+  // Apply multi-select user filter
+  if (selectedUserFilters.length > 0) {
     filteredLeads = filteredLeads.filter(lead => {
       const userName = lead.assignedTo ? lead.assignedTo.name : 'Unassigned';
-      return userName === userFilter;
+      return selectedUserFilters.includes(userName);
     });
+  }
+
+  // Apply multi-select source filter
+  if (selectedSourceFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedSourceFilters.includes(lead.source || 'Other'));
+  }
+
+  // Apply multi-select university filter
+  if (selectedUniversityFilters.length > 0) {
+    filteredLeads = filteredLeads.filter(lead => selectedUniversityFilters.includes(lead.university || 'Not Specified'));
   }
 
   // Apply transition filter if active
@@ -3135,6 +4002,143 @@ function renderAllLeads() {
   renderPaginatedLeads();
 }
 
+// Clear all filters function
+function clearAllFilters() {
+  // Clear search input
+  const searchInput = document.getElementById('all-leads-search');
+  if (searchInput) searchInput.value = '';
+  
+  // Reset multi-select filters
+  selectedStatusFilters = [];
+  selectedUserFilters = [];
+  selectedSourceFilters = [];
+  selectedUniversityFilters = [];
+  
+  // Reset multi-select UI
+  const statusToggle = document.getElementById('status-multiselect-toggle');
+  if (statusToggle) statusToggle.textContent = 'All Statuses';
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const userToggle = document.getElementById('user-filter-toggle');
+  if (userToggle) userToggle.textContent = 'All Users';
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const sourceToggle = document.getElementById('source-multiselect-toggle');
+  if (sourceToggle) sourceToggle.textContent = 'All Sources';
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  const universityToggle = document.getElementById('university-multiselect-toggle');
+  if (universityToggle) universityToggle.textContent = 'All Universities';
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Keep hidden inputs empty for backward compatibility
+  const statusFilter = document.getElementById('all-leads-status-filter');
+  if (statusFilter) statusFilter.value = '';
+  
+  const userFilter = document.getElementById('all-leads-user-filter');
+  if (userFilter) userFilter.value = '';
+  
+  const sourceFilter = document.getElementById('all-leads-source-filter');
+  if (sourceFilter) sourceFilter.value = '';
+  
+  // Close and reset status transition filter
+  const transitionPanel = document.getElementById('transition-filter-panel');
+  if (transitionPanel) transitionPanel.style.display = 'none';
+  
+  const transitionFromStatus = document.getElementById('transition-from-status');
+  if (transitionFromStatus) transitionFromStatus.value = '';
+  
+  const transitionToStatus = document.getElementById('transition-to-status');
+  if (transitionToStatus) transitionToStatus.value = '';
+  
+  const transitionDateFilter = document.getElementById('transition-date-filter');
+  if (transitionDateFilter) transitionDateFilter.value = 'all';
+  
+  const transitionStartDate = document.getElementById('transition-start-date');
+  if (transitionStartDate) transitionStartDate.value = '';
+  
+  const transitionEndDate = document.getElementById('transition-end-date');
+  if (transitionEndDate) transitionEndDate.value = '';
+  
+  const transitionCustomDates = document.getElementById('transition-custom-dates');
+  if (transitionCustomDates) transitionCustomDates.style.display = 'none';
+  
+  const transitionStatus = document.getElementById('transition-filter-status');
+  if (transitionStatus) transitionStatus.innerHTML = '<i class="fas fa-info-circle"></i> Select status transition and time period, then click Apply.';
+  
+  statusTransitionFilterActive = false;
+  transitionFilterConfig = {
+    fromStatus: '',
+    toStatus: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  // Close and reset no action filter
+  const noActionPanel = document.getElementById('no-action-filter-panel');
+  if (noActionPanel) noActionPanel.style.display = 'none';
+  
+  const noActionPeriod = document.getElementById('no-action-period');
+  if (noActionPeriod) noActionPeriod.value = '7';
+  
+  const noActionStartDate = document.getElementById('no-action-start-date');
+  if (noActionStartDate) noActionStartDate.value = '';
+  
+  const noActionEndDate = document.getElementById('no-action-end-date');
+  if (noActionEndDate) noActionEndDate.value = '';
+  
+  const noActionCustomDates = document.getElementById('no-action-custom-dates');
+  if (noActionCustomDates) noActionCustomDates.style.display = 'none';
+  
+  const noActionStatus = document.getElementById('no-action-filter-status');
+  if (noActionStatus) noActionStatus.innerHTML = '<i class="fas fa-info-circle"></i> This will show leads assigned but not updated (no status changes or notes added) during the selected period.';
+  
+  noActionFilterActive = false;
+  noActionFilterConfig = {
+    days: 7,
+    startDate: null,
+    endDate: null
+  };
+  
+  // Close and reset transfer filter
+  const transferPanel = document.getElementById('transfer-filter-panel');
+  if (transferPanel) transferPanel.style.display = 'none';
+  
+  const transferFromUser = document.getElementById('transfer-from-user');
+  if (transferFromUser) transferFromUser.value = '';
+  
+  const transferToUser = document.getElementById('transfer-to-user');
+  if (transferToUser) transferToUser.value = '';
+  
+  const transferDateFilter = document.getElementById('transfer-date-filter');
+  if (transferDateFilter) transferDateFilter.value = 'all';
+  
+  const transferStartDate = document.getElementById('transfer-start-date');
+  if (transferStartDate) transferStartDate.value = '';
+  
+  const transferEndDate = document.getElementById('transfer-end-date');
+  if (transferEndDate) transferEndDate.value = '';
+  
+  const transferCustomDates = document.getElementById('transfer-custom-dates');
+  if (transferCustomDates) transferCustomDates.style.display = 'none';
+  
+  const transferStatus = document.getElementById('transfer-filter-status');
+  if (transferStatus) transferStatus.innerHTML = '<i class="fas fa-info-circle"></i> Select transfer criteria and time period, then click Apply.';
+  
+  transferFilterActive = false;
+  transferFilterConfig = {
+    fromUser: '',
+    toUser: '',
+    dateFilter: 'all',
+    startDate: null,
+    endDate: null
+  };
+  
+  // Reapply filters (which will show all leads since filters are cleared)
+  renderAllLeads();
+}
+
 // Check if a lead matches the status transition filter
 function checkLeadStatusTransition(lead, config) {
   if (!lead.statusHistory || lead.statusHistory.length === 0) {
@@ -3151,29 +4155,32 @@ function checkLeadStatusTransition(lead, config) {
     endDate = dateRange.end;
   }
 
-  // Check status history for transitions
-  for (let i = 1; i < lead.statusHistory.length; i++) {
-    const prevStatus = lead.statusHistory[i - 1].status;
-    const currStatus = lead.statusHistory[i].status;
-    const changeDate = new Date(lead.statusHistory[i].changedAt);
+  // Only check the latest 2 states (most recent transition)
+  // If there's only 1 status in history, there's no transition
+  if (lead.statusHistory.length < 2) {
+    return false;
+  }
 
-    // Check if date is in range
-    if (startDate && endDate) {
-      if (changeDate < startDate || changeDate > endDate) {
-        continue;
-      }
-    }
+  // Get the last two status entries (latest transition)
+  const secondLast = lead.statusHistory[lead.statusHistory.length - 2];
+  const last = lead.statusHistory[lead.statusHistory.length - 1];
+  
+  const prevStatus = secondLast.status;
+  const currStatus = last.status;
+  const changeDate = new Date(last.changedAt);
 
-    // Check if transition matches
-    const fromMatch = !config.fromStatus || prevStatus === config.fromStatus;
-    const toMatch = !config.toStatus || currStatus === config.toStatus;
-
-    if (fromMatch && toMatch) {
-      return true;
+  // Check if date is in range
+  if (startDate && endDate) {
+    if (changeDate < startDate || changeDate > endDate) {
+      return false;
     }
   }
 
-  return false;
+  // Check if transition matches
+  const fromMatch = !config.fromStatus || prevStatus === config.fromStatus;
+  const toMatch = !config.toStatus || currStatus === config.toStatus;
+
+  return fromMatch && toMatch;
 }
 
 // Get date range for transition filter
@@ -3231,6 +4238,11 @@ function renderPaginatedLeads() {
   
   // Update total stats
   document.getElementById('all-leads-total').textContent = filteredLeadsData.length;
+  // Also update the header count
+  const headerCount = document.getElementById('all-leads-total-header');
+  if (headerCount) {
+    headerCount.textContent = filteredLeadsData.length;
+  }
 
   // Uncheck select all checkbox
   const selectAllCheckbox = document.getElementById('select-all-leads');
@@ -3256,11 +4268,13 @@ function renderPaginatedLeads() {
   tbody.innerHTML = '';
   paginatedLeads.forEach(lead => {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => viewLeadDetail(lead._id);
     
     const isSelected = selectedLeadIds.includes(lead._id);
     
     tr.innerHTML = `
-      <td><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
+      <td onclick="event.stopPropagation();"><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
       <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.name || 'N/A'}">${lead.name || 'N/A'}</td>
       <td>${lead.contact || 'N/A'}</td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.city || 'N/A'}">${lead.city || 'N/A'}</td>
@@ -3269,11 +4283,6 @@ function renderPaginatedLeads() {
       <td><span class="status-badge status-${lead.status ? lead.status.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-') : 'unknown'}">${lead.status || 'Unknown'}</span></td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
       <td>${new Date(lead.updatedAt).toLocaleDateString()}</td>
-      <td>
-        <button onclick="viewLeadDetail('${lead._id}')" class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;">
-          <i class="fas fa-eye"></i> View
-        </button>
-      </td>
     `;
     
     tbody.appendChild(tr);
@@ -3534,13 +4543,13 @@ function selectLimitedLeads() {
   }
 }
 
-// Combined bulk action (status update + transfer)
+// Combined bulk action (status update + transfer with distribution)
 async function performBulkActions() {
   const status = document.getElementById('bulk-status-select').value;
-  const toUserId = document.getElementById('bulk-transfer-select').value;
+  const hasTransfer = selectedTransferUserIds.length > 0;
   
-  if (!status && !toUserId) {
-    showToast('No Action Selected', 'Please select a status to update and/or a user to transfer leads to', 'warning');
+  if (!status && !hasTransfer) {
+    showToast('No Action Selected', 'Please select a status to update and/or user(s) to transfer leads to', 'warning');
     return;
   }
 
@@ -3549,27 +4558,22 @@ async function performBulkActions() {
     return;
   }
 
-  // Check if trying to transfer leads already assigned to the target user
-  if (toUserId) {
-    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-    const alreadyAssigned = allLeadsData.filter(lead => 
-      selectedLeadIds.includes(lead._id) && 
-      lead.assignedTo && 
-      lead.assignedTo._id === toUserId
-    );
-    
-    if (alreadyAssigned.length > 0) {
-      showToast('Invalid Transfer', `${alreadyAssigned.length} lead(s) are already assigned to ${toUserName}. Please deselect them or choose a different user.`, 'error');
-      return;
-    }
-  }
-
   // Build confirmation message
   let actions = [];
   if (status) actions.push(`Update status to <strong>"${status}"</strong>`);
-  if (toUserId) {
-    const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-    actions.push(`Transfer to <strong>${toUserName}</strong>`);
+  if (hasTransfer) {
+    if (selectedTransferUserIds.length === 1) {
+      const user = users.find(u => u._id === selectedTransferUserIds[0]);
+      actions.push(`Transfer to <strong>${user ? user.name : 'selected user'}</strong>`);
+    } else {
+      const userNames = selectedTransferUserIds.map(id => {
+        const user = users.find(u => u._id === id);
+        return user ? user.name : 'Unknown';
+      });
+      const leadsPerUser = Math.floor(selectedLeadIds.length / selectedTransferUserIds.length);
+      const remainder = selectedLeadIds.length % selectedTransferUserIds.length;
+      actions.push(`Distribute equally to <strong>${userNames.join(', ')}</strong><br><small>(~${leadsPerUser}${remainder > 0 ? '-' + (leadsPerUser + 1) : ''} leads each)</small>`);
+    }
   }
   
   const message = `${actions.join(' and ')} for <strong>${selectedLeadIds.length} lead(s)</strong>?<br><br><small style="color: #6b7280;">This action will be performed as a single optimized operation.</small>`;
@@ -3580,9 +4584,42 @@ async function performBulkActions() {
       
       const token = getToken();
       
-      // Use combined endpoint for better performance (single transaction)
-      if (status && toUserId) {
-        // Both status and transfer - use combined endpoint
+      // Handle distributed transfer (multiple users)
+      if (hasTransfer && selectedTransferUserIds.length > 1) {
+        // Distribute leads equally among selected users
+        const response = await fetch(`${API_URL}/admin/bulk-distribute-leads`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            leadIds: selectedLeadIds,
+            userIds: selectedTransferUserIds,
+            status: status || undefined
+          })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          hideLoading();
+          showToast('Distribution Failed', data.message || 'Failed to distribute leads', 'error');
+          return;
+        }
+        
+        hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
+        await loadAllLeads();
+        await refreshDashboard();
+        
+        document.getElementById('bulk-status-select').value = '';
+        clearTransferUsers();
+        
+        showToast('Distribution Completed', data.message || `Leads distributed to ${selectedTransferUserIds.length} users`, 'success');
+        
+      } else if (status && hasTransfer) {
+        // Both status and single user transfer - use combined endpoint
         const response = await fetch(`${API_URL}/admin/bulk-update-leads`, {
           method: 'POST',
           headers: {
@@ -3592,7 +4629,7 @@ async function performBulkActions() {
           body: JSON.stringify({
             leadIds: selectedLeadIds,
             status: status,
-            toUserId: toUserId
+            toUserId: selectedTransferUserIds[0]
           })
         });
 
@@ -3605,15 +4642,15 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
         
         document.getElementById('bulk-status-select').value = '';
-        document.getElementById('bulk-transfer-select').value = '';
+        clearTransferUsers();
         
-        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-        showToast('Actions Completed', `${data.modifiedCount} lead(s) updated: status to "${status}" and transferred to ${toUserName}. Selection preserved.`, 'success');
+        const user = users.find(u => u._id === selectedTransferUserIds[0]);
+        showToast('Actions Completed', `${data.modifiedCount} lead(s) updated: status to "${status}" and transferred to ${user ? user.name : 'user'}. Selection preserved.`, 'success');
         
       } else if (status) {
         // Status only
@@ -3638,14 +4675,14 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
         document.getElementById('bulk-status-select').value = '';
         showToast('Status Updated', `${statusData.updatedCount} lead(s) updated to "${status}". Selection preserved.`, 'success');
         
-      } else if (toUserId) {
-        // Transfer only
+      } else if (hasTransfer && selectedTransferUserIds.length === 1) {
+        // Single user transfer only
         const transferResponse = await fetch(`${API_URL}/admin/bulk-transfer-leads`, {
           method: 'POST',
           headers: {
@@ -3654,7 +4691,7 @@ async function performBulkActions() {
           },
           body: JSON.stringify({
             leadIds: selectedLeadIds,
-            toUserId: toUserId
+            toUserId: selectedTransferUserIds[0]
           })
         });
 
@@ -3667,13 +4704,13 @@ async function performBulkActions() {
         }
         
         hideLoading();
+        adminLastCheckTimestamp = Date.now(); // Prevent self-notification
         await loadAllLeads();
-        // Refresh entire dashboard to update charts and stats
         await refreshDashboard();
-        document.getElementById('bulk-transfer-select').value = '';
+        clearTransferUsers();
         
-        const toUserName = document.getElementById('bulk-transfer-select').selectedOptions[0].text;
-        showToast('Transfer Completed', `${transferData.transferredCount} lead(s) transferred to ${toUserName}. Selection preserved.`, 'success');
+        const user = users.find(u => u._id === selectedTransferUserIds[0]);
+        showToast('Transfer Completed', `${transferData.transferredCount} lead(s) transferred to ${user ? user.name : 'user'}. Selection preserved.`, 'success');
       }
       
     } catch (error) {
@@ -3838,6 +4875,446 @@ function viewLeadDetail(leadId) {
   openLeadModal(leadId);
 }
 
+// ============ Multi-Select Filter Functions ============
+
+// Status multi-select functions
+function selectAllStatuses() {
+  const checkboxes = document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]');
+  selectedStatusFilters = [];
+  checkboxes.forEach(cb => {
+    cb.checked = true;
+    selectedStatusFilters.push(cb.value);
+  });
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function clearStatusFilter() {
+  selectedStatusFilters = [];
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function updateStatusFilter() {
+  selectedStatusFilters = [];
+  document.querySelectorAll('#status-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedStatusFilters.push(cb.value);
+  });
+  updateStatusFilterLabel();
+  renderAllLeads();
+}
+
+function updateStatusFilterLabel() {
+  const toggle = document.getElementById('status-multiselect-toggle');
+  if (selectedStatusFilters.length === 0) {
+    toggle.textContent = 'All Statuses';
+  } else if (selectedStatusFilters.length === 1) {
+    toggle.textContent = selectedStatusFilters[0];
+  } else {
+    toggle.textContent = `${selectedStatusFilters.length} statuses`;
+  }
+}
+
+// User filter multi-select functions
+function buildUserFilterMultiSelect() {
+  const toggle = document.getElementById('user-filter-toggle');
+  const dropdown = document.getElementById('user-filter-dropdown');
+  if (!toggle || !dropdown) return;
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add Unassigned option first
+  const unassignedItem = document.createElement('label');
+  unassignedItem.className = 'multi-select-item';
+  const unassignedCb = document.createElement('input');
+  unassignedCb.type = 'checkbox';
+  unassignedCb.value = 'Unassigned';
+  unassignedCb.onchange = () => updateUserFilters();
+  const unassignedSpan = document.createElement('span');
+  unassignedSpan.textContent = 'Unassigned';
+  unassignedItem.appendChild(unassignedCb);
+  unassignedItem.appendChild(unassignedSpan);
+  dropdown.appendChild(unassignedItem);
+
+  // Add all users
+  users.forEach(u => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = u.name;
+    cb.onchange = () => updateUserFilters();
+    const span = document.createElement('span');
+    span.textContent = `${u.name} (${u.email})`;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserFilters() {
+  selectedUserFilters = ['Unassigned'];
+  users.forEach(u => selectedUserFilters.push(u.name));
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = true);
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function clearUserFilters() {
+  selectedUserFilters = [];
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function updateUserFilters() {
+  selectedUserFilters = [];
+  document.querySelectorAll('#user-filter-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedUserFilters.push(cb.value);
+  });
+  updateUserFilterLabel();
+  renderAllLeads();
+}
+
+function updateUserFilterLabel() {
+  const toggle = document.getElementById('user-filter-toggle');
+  if (selectedUserFilters.length === 0) {
+    toggle.textContent = 'All Users';
+  } else if (selectedUserFilters.length === 1) {
+    toggle.textContent = selectedUserFilters[0];
+  } else {
+    toggle.textContent = `${selectedUserFilters.length} users`;
+  }
+}
+
+// Source filter multi-select functions
+function buildSourceFilterMultiSelect() {
+  const toggle = document.getElementById('source-multiselect-toggle');
+  const dropdown = document.getElementById('source-multiselect-dropdown');
+  if (!toggle || !dropdown || !allLeadsData) return;
+
+  // Collect unique sources
+  const sources = new Set();
+  allLeadsData.forEach(lead => {
+    sources.add(lead.source || 'Other');
+  });
+  const sortedSources = Array.from(sources).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllSourceFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearSourceFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all sources
+  sortedSources.forEach(source => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = source;
+    cb.onchange = () => updateSourceFilters();
+    const span = document.createElement('span');
+    span.textContent = source;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    selectedSourceFilters.push(cb.value);
+  });
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function clearSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function updateSourceFilters() {
+  selectedSourceFilters = [];
+  document.querySelectorAll('#source-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedSourceFilters.push(cb.value);
+  });
+  updateSourceFilterLabel();
+  renderAllLeads();
+}
+
+function updateSourceFilterLabel() {
+  const toggle = document.getElementById('source-multiselect-toggle');
+  if (selectedSourceFilters.length === 0) {
+    toggle.textContent = 'All Sources';
+  } else if (selectedSourceFilters.length === 1) {
+    toggle.textContent = selectedSourceFilters[0];
+  } else {
+    toggle.textContent = `${selectedSourceFilters.length} sources`;
+  }
+}
+
+// University filter multi-select functions
+function buildUniversityFilterMultiSelect() {
+  const toggle = document.getElementById('university-multiselect-toggle');
+  const dropdown = document.getElementById('university-multiselect-dropdown');
+  if (!toggle || !dropdown || !allLeadsData) return;
+
+  // Collect unique universities
+  const universities = new Set();
+  allLeadsData.forEach(lead => {
+    universities.add(lead.university || 'Not Specified');
+  });
+  const sortedUniversities = Array.from(universities).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUniversityFilters();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUniversityFilters();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all universities
+  sortedUniversities.forEach(university => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = university;
+    cb.onchange = () => updateUniversityFilters();
+    const span = document.createElement('span');
+    span.textContent = university;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    selectedUniversityFilters.push(cb.value);
+  });
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function clearUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function updateUniversityFilters() {
+  selectedUniversityFilters = [];
+  document.querySelectorAll('#university-multiselect-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedUniversityFilters.push(cb.value);
+  });
+  updateUniversityFilterLabel();
+  renderAllLeads();
+}
+
+function updateUniversityFilterLabel() {
+  const toggle = document.getElementById('university-multiselect-toggle');
+  if (selectedUniversityFilters.length === 0) {
+    toggle.textContent = 'All Universities';
+  } else if (selectedUniversityFilters.length === 1) {
+    toggle.textContent = selectedUniversityFilters[0];
+  } else {
+    toggle.textContent = `${selectedUniversityFilters.length} universities`;
+  }
+}
+
+// Bulk transfer multi-select functions
+function buildBulkTransferMultiSelect() {
+  const toggle = document.getElementById('bulk-transfer-toggle');
+  const dropdown = document.getElementById('bulk-transfer-dropdown');
+  if (!toggle || !dropdown) return;
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllTransferUsers();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearTransferUsers();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Info text
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size: 11px; color: #6b7280; padding: 4px 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 4px;';
+  info.innerHTML = '<i class="fas fa-info-circle"></i> Leads will be distributed equally among selected users';
+  dropdown.appendChild(info);
+
+  // Add all users
+  users.forEach(u => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = u._id;
+    cb.dataset.name = u.name;
+    cb.onchange = () => updateTransferUsers();
+    const span = document.createElement('span');
+    span.textContent = `${u.name} (${u.email})`;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllTransferUsers() {
+  selectedTransferUserIds = users.map(u => u._id);
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]').forEach(cb => cb.checked = true);
+  updateTransferUsersLabel();
+}
+
+function clearTransferUsers() {
+  selectedTransferUserIds = [];
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateTransferUsersLabel();
+}
+
+function updateTransferUsers() {
+  selectedTransferUserIds = [];
+  document.querySelectorAll('#bulk-transfer-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    selectedTransferUserIds.push(cb.value);
+  });
+  updateTransferUsersLabel();
+}
+
+function updateTransferUsersLabel() {
+  const toggle = document.getElementById('bulk-transfer-toggle');
+  if (selectedTransferUserIds.length === 0) {
+    toggle.textContent = 'Transfer To...';
+  } else if (selectedTransferUserIds.length === 1) {
+    const user = users.find(u => u._id === selectedTransferUserIds[0]);
+    toggle.textContent = user ? user.name : 'Transfer To...';
+  } else {
+    toggle.textContent = `${selectedTransferUserIds.length} users selected`;
+  }
+}
+
+// Initialize multi-select dropdowns toggle behavior
+function initMultiSelectDropdowns() {
+  const multiSelects = [
+    { toggle: 'status-multiselect-toggle', dropdown: 'status-multiselect-dropdown', container: 'status-multiselect' },
+    { toggle: 'user-filter-toggle', dropdown: 'user-filter-dropdown', container: 'user-filter-multiselect' },
+    { toggle: 'source-multiselect-toggle', dropdown: 'source-multiselect-dropdown', container: 'source-multiselect' },
+    { toggle: 'university-multiselect-toggle', dropdown: 'university-multiselect-dropdown', container: 'university-multiselect' },
+    { toggle: 'bulk-transfer-toggle', dropdown: 'bulk-transfer-dropdown', container: 'bulk-transfer-multiselect' }
+  ];
+
+  multiSelects.forEach(ms => {
+    const toggle = document.getElementById(ms.toggle);
+    const dropdown = document.getElementById(ms.dropdown);
+    if (toggle && dropdown) {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close other dropdowns
+        multiSelects.forEach(other => {
+          if (other.dropdown !== ms.dropdown) {
+            const otherDropdown = document.getElementById(other.dropdown);
+            if (otherDropdown) otherDropdown.style.display = 'none';
+          }
+        });
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    multiSelects.forEach(ms => {
+      const container = document.getElementById(ms.container);
+      const dropdown = document.getElementById(ms.dropdown);
+      if (container && dropdown && !container.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+  });
+}
+
 // Setup event listeners for filters
 // Debounce utility
 function debounce(func, wait) {
@@ -3854,8 +5331,6 @@ function debounce(func, wait) {
 
 // Event listeners for all leads filters with debouncing
 document.getElementById('all-leads-search').addEventListener('input', debounce(renderAllLeads, 300));
-document.getElementById('all-leads-status-filter').addEventListener('change', renderAllLeads);
-document.getElementById('all-leads-user-filter').addEventListener('change', renderAllLeads);
 
 // Add escape key handler for create lead modal
 document.addEventListener('keydown', function(e) {
@@ -3874,4 +5349,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (allLeadsSection) {
     loadAllLeads();
   }
+  // Initialize multi-select dropdown toggle behavior
+  initMultiSelectDropdowns();
 });

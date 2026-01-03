@@ -2,7 +2,12 @@ const jwt = require('jsonwebtoken');
 
 const auth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Support both Authorization header and query token (for SSE)
+    let token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
     
     if (!token) {
       return res.status(401).json({ message: 'No authentication token, access denied' });

@@ -30,11 +30,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       
-      // Redirect based on role
+      // Redirect based on role - use replace() to avoid cache issues
       if (data.user.role === 'admin') {
-        window.location.href = 'admin.html';
+        window.location.replace('admin.html?t=' + Date.now());
       } else {
-        window.location.href = 'user.html';
+        window.location.replace('user.html?t=' + Date.now());
       }
     } else {
       console.error('Login failed:', data);

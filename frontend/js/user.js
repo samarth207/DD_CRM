@@ -1,4 +1,130 @@
+// Role validation - ensure user is on user page
+(function validateUserRole() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (user && user.role === 'admin') {
+    // Admin token found on user page - redirect to admin page
+    console.log('Admin user detected on user page, redirecting to admin page');
+    window.location.replace('admin.html');
+  }
+})();
+
 // ===== MODAL AND NOTIFICATION HELPERS =====
+// Live Update Polling System
+let lastCheckTimestamp = Date.now();
+let lastLeadCount = 0; // Track lead count to detect deletions
+let updateCheckInterval = null;
+
+// Start polling for updates
+function startUpdatePolling() {
+  // Check for updates every 15 seconds
+  updateCheckInterval = setInterval(checkForUpdates, 15000);
+  console.log('Live update polling started');
+}
+
+// Stop polling
+function stopUpdatePolling() {
+  if (updateCheckInterval) {
+    clearInterval(updateCheckInterval);
+    updateCheckInterval = null;
+  }
+}
+
+// Check for updates
+async function checkForUpdates() {
+  try {
+    // Don't check for updates if a modal is open (user is editing)
+    const leadModal = document.getElementById('lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      return; // Skip this check, user is actively editing
+    }
+    
+    const response = await apiCall(`/leads/check-updates?lastCheck=${lastCheckTimestamp}&lastCount=${lastLeadCount}`);
+    
+    // Handle auth errors or network failures - stop polling if logged out
+    if (!response) {
+      stopUpdatePolling();
+      return;
+    }
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hasUpdates) {
+        const changeType = data.countChanged 
+          ? (data.currentCount > lastLeadCount ? 'added' : 'removed')
+          : 'updated';
+        showUpdateNotification(data.updateCount || 1, changeType, data.countChanged);
+        lastCheckTimestamp = data.latestTimestamp;
+        lastLeadCount = data.currentCount;
+      } else {
+        // Update count even if no changes to stay in sync
+        lastLeadCount = data.currentCount;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for updates:', error);
+    // Don't show error toast for background polling failures
+  }
+}
+
+// Show update notification banner
+function showUpdateNotification(updateCount, changeType = 'updated', countChanged = false) {
+  const banner = document.getElementById('update-notification-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    // Update message with count and type
+    const messageDiv = document.getElementById('update-notification-message');
+    if (messageDiv) {
+      let message = '';
+      if (countChanged) {
+        if (changeType === 'removed') {
+          message = `Lead(s) have been removed by admin. Click to refresh and see the latest changes.`;
+        } else {
+          message = `New lead(s) have been assigned to you. Click to refresh and see them.`;
+        }
+      } else {
+        message = `${updateCount} lead${updateCount > 1 ? 's have' : ' has'} been updated by admin. Click to refresh and see the latest changes.`;
+      }
+      messageDiv.textContent = message;
+    }
+  }
+}
+
+// Dismiss update notification
+function dismissUpdateNotification() {
+  const banner = document.getElementById('update-notification-banner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+  // Reset timestamp to current time to avoid showing the same notification again
+  lastCheckTimestamp = Date.now();
+}
+
+// Refresh user data
+function refreshUserData() {
+  dismissUpdateNotification();
+  // Reload leads data
+  currentPage = 1;
+  loadLeads();
+  // Update timestamp to prevent duplicate notifications
+  lastCheckTimestamp = Date.now();
+  showToast('Data Refreshed', 'Your leads have been updated with the latest changes', 'success');
+}
+
+// Format date/time in 12-hour format
+function formatDateTime(date) {
+  if (!(date instanceof Date)) {
+    date = new Date(date);
+  }
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
 // Show loading overlay
 function showLoading(message = 'Processing...', submessage = 'Please wait') {
   document.getElementById('loading-message').textContent = message;
@@ -332,10 +458,268 @@ if (!user || user.role !== 'user') {
   window.location.href = 'index.html';
 }
 
+// Store current user ID for filtering
+window.currentUserId = user.id || user._id;
+
 let allLeads = [];
 let currentLead = null;
+let userNoActionFilterActive = false;
+let userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
+
+// Multi-select filter arrays
+let userSelectedStatusFilters = [];
+let userSelectedSourceFilters = [];
+let userSelectedUniversityFilters = [];
 
 // Initialize everything after DOM is ready
+// ===== TUTORIAL SYSTEM =====
+let currentTutorialStep = 0;
+const tutorialSteps = [
+  {
+    title: '📊 Dashboard Overview',
+    description: 'This is your main dashboard showing quick stats about your leads. You can see total leads, fresh leads, and today\'s activity at a glance.',
+    target: '.dashboard',
+    position: 'center'
+  },
+  {
+    title: '🔍 Search & Filters',
+    description: 'Use these powerful filters to find exactly what you\'re looking for. Search by name, email, city, and filter by status, source, date range, or leads with no recent activity.',
+    target: '.card:first-of-type',
+    position: 'bottom'
+  },
+  {
+    title: '📈 Status Cards',
+    description: 'Quick filter buttons showing lead counts by status. Click any card to instantly filter your leads. The counts update dynamically based on your active filters!',
+    target: '#status-filter-section',
+    position: 'bottom'
+  },
+  {
+    title: '📋 Your Leads',
+    description: 'This is where all your assigned leads appear. Click on any lead to view details, add notes, change status, and make calls. Use the action buttons to manage leads efficiently.',
+    target: '#leads-section',
+    position: 'top'
+  },
+  {
+    title: '✏️ Lead Details & Actions',
+    description: 'We\'ve opened a lead for you! See how the modal shows all details. You can: 1) Update Status (Fresh, Follow up, Counselled, etc.) 2) Add Notes to track conversations 3) Record Call Details with duration 4) Update Contact Info (phone, email, city) 5) View Full History of all interactions. All changes save automatically!',
+    target: '#lead-modal',
+    position: 'center'
+  },
+  {
+    title: '📄 Brochures Library',
+    description: 'Access all marketing brochures here. Download PDFs or copy links to share with your leads instantly.',
+    target: '#brochures-section',
+    position: 'top'
+  },
+  {
+    title: '📊 Analytics Dashboard',
+    description: 'Track your performance with beautiful charts. See your lead distribution by status, source analysis, and conversion trends over time.',
+    target: '#analytics-section',
+    position: 'top'
+  },
+  {
+    title: '🎯 Ready to Go!',
+    description: 'You\'re all set! Start managing your leads like a pro. Remember, you can always access help from the sidebar. Good luck! 🚀',
+    target: '.sidebar',
+    position: 'right'
+  }
+];
+
+function checkAndShowWelcome() {
+  // Check if user has seen tutorial
+  if (!user.hasSeenTutorial) {
+    showWelcomeModal();
+  }
+}
+
+function showWelcomeModal() {
+  const modal = document.getElementById('welcome-modal');
+  const userName = document.getElementById('welcome-user-name');
+  if (modal && userName) {
+    userName.textContent = `Hello, ${user.name}! 👋`;
+    modal.style.display = 'flex';
+  }
+}
+
+function startTutorial() {
+  // Hide welcome modal
+  const welcomeModal = document.getElementById('welcome-modal');
+  if (welcomeModal) welcomeModal.style.display = 'none';
+  
+  // Reset tutorial
+  currentTutorialStep = 0;
+  
+  // Show tutorial overlay and tooltip
+  document.getElementById('tutorial-overlay').style.display = 'block';
+  document.getElementById('tutorial-tooltip').style.display = 'block';
+  
+  // Show first step
+  showTutorialStep(0);
+}
+
+function showTutorialStep(stepIndex) {
+  if (stepIndex < 0 || stepIndex >= tutorialSteps.length) return;
+  
+  currentTutorialStep = stepIndex;
+  const step = tutorialSteps[stepIndex];
+  
+  // Close lead modal when moving away from lead details step
+  if (stepIndex !== 4) {
+    const leadModal = document.getElementById('lead-modal');
+    if (leadModal && leadModal.style.display === 'flex') {
+      closeModal();
+    }
+  }
+  
+  // Update step indicator
+  document.getElementById('tutorial-step-indicator').textContent = `Step ${stepIndex + 1} of ${tutorialSteps.length}`;
+  document.getElementById('tutorial-title').textContent = step.title;
+  document.getElementById('tutorial-description').textContent = step.description;
+  
+  // Show/hide previous button
+  const prevBtn = document.getElementById('tutorial-prev-btn');
+  if (stepIndex === 0) {
+    prevBtn.style.display = 'none';
+  } else {
+    prevBtn.style.display = 'flex';
+  }
+  
+  // Update next button text
+  const nextBtn = document.getElementById('tutorial-next-btn');
+  if (stepIndex === tutorialSteps.length - 1) {
+    nextBtn.innerHTML = '<i class="fas fa-check"></i> Finish';
+  } else {
+    nextBtn.innerHTML = 'Next <i class="fas fa-arrow-right"></i>';
+  }
+  
+  // Remove previous highlights
+  document.querySelectorAll('.tutorial-highlight').forEach(el => {
+    el.classList.remove('tutorial-highlight');
+  });
+  
+  // Special handling for lead details step - open first lead if available
+  if (stepIndex === 4 && allLeads && allLeads.length > 0) {
+    // Open the first lead in the modal to demonstrate
+    setTimeout(() => {
+      openLeadModal(allLeads[0]);
+      // After modal opens, highlight it
+      setTimeout(() => {
+        const leadModal = document.getElementById('lead-modal');
+        if (leadModal) {
+          const modalContent = leadModal.querySelector('.modal-content');
+          if (modalContent) {
+            modalContent.classList.add('tutorial-highlight');
+            positionTooltip(modalContent, step.position);
+          }
+        }
+      }, 300);
+    }, 100);
+    return; // Skip normal highlighting for this step
+  }
+  
+  // Highlight target element
+  const targetElement = document.querySelector(step.target);
+  if (targetElement) {
+    targetElement.classList.add('tutorial-highlight');
+    
+    // Scroll to element
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Position tooltip
+    setTimeout(() => positionTooltip(targetElement, step.position), 300);
+  }
+}
+
+function positionTooltip(targetElement, position) {
+  const tooltip = document.getElementById('tutorial-tooltip');
+  const rect = targetElement.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  
+  let top, left;
+  
+  switch(position) {
+    case 'bottom':
+      top = rect.bottom + 20;
+      left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      break;
+    case 'top':
+      top = rect.top - tooltipRect.height - 20;
+      left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      break;
+    case 'right':
+      top = rect.top + (rect.height / 2) - (tooltipRect.height / 2);
+      left = rect.right + 20;
+      break;
+    case 'center':
+    default:
+      top = window.innerHeight / 2 - tooltipRect.height / 2;
+      left = window.innerWidth / 2 - tooltipRect.width / 2;
+      break;
+  }
+  
+  // Keep tooltip within viewport
+  top = Math.max(20, Math.min(top, window.innerHeight - tooltipRect.height - 20));
+  left = Math.max(20, Math.min(left, window.innerWidth - tooltipRect.width - 20));
+  
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+}
+
+function nextTutorialStep() {
+  if (currentTutorialStep < tutorialSteps.length - 1) {
+    showTutorialStep(currentTutorialStep + 1);
+  } else {
+    endTutorial();
+  }
+}
+
+function previousTutorialStep() {
+  if (currentTutorialStep > 0) {
+    showTutorialStep(currentTutorialStep - 1);
+  }
+}
+
+async function endTutorial() {
+  // Hide tutorial UI
+  document.getElementById('tutorial-overlay').style.display = 'none';
+  document.getElementById('tutorial-tooltip').style.display = 'none';
+  
+  // Remove highlights
+  document.querySelectorAll('.tutorial-highlight').forEach(el => {
+    el.classList.remove('tutorial-highlight');
+  });
+  
+  // Mark tutorial as complete
+  await markTutorialComplete();
+  
+  // Show success message
+  showToast('Tutorial Complete! 🎉', 'You\'re ready to start managing your leads!', 'success');
+}
+
+async function skipTutorial() {
+  // Hide welcome modal
+  const welcomeModal = document.getElementById('welcome-modal');
+  if (welcomeModal) welcomeModal.style.display = 'none';
+  
+  // Mark tutorial as complete (even though skipped)
+  await markTutorialComplete();
+}
+
+async function markTutorialComplete() {
+  try {
+    const response = await apiCall('/auth/complete-tutorial', {
+      method: 'PATCH'
+    });
+    
+    if (response.ok) {
+      // Update local user object
+      user.hasSeenTutorial = true;
+    }
+  } catch (error) {
+    console.error('Error marking tutorial complete:', error);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM Content Loaded - Initializing user dashboard');
   
@@ -394,45 +778,79 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Load leads after DOM is ready
   loadLeads();
+  
+  // Initialize multi-select dropdowns
+  initUserMultiSelectDropdowns();
+  
+  // Start live update polling
+  startUpdatePolling();
+  
+  // Check if user needs to see welcome/tutorial (after a short delay for better UX)
+  // DISABLED: Tutorial temporarily disabled
+  // setTimeout(() => checkAndShowWelcome(), 800);
+  
+  // Wire up update notification buttons
+  const refreshBtn = document.getElementById('refresh-data-btn');
+  const dismissBtn = document.getElementById('dismiss-notification-btn');
+  
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshUserData);
+  }
+  
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', dismissUpdateNotification);
+  }
+
+  // No-action period change handler
+  const userNoActionPeriod = document.getElementById('user-no-action-period');
+  if (userNoActionPeriod) {
+    userNoActionPeriod.addEventListener('change', () => {
+      const customDates = document.getElementById('user-no-action-custom-dates');
+      if (userNoActionPeriod.value === 'custom') {
+        customDates.style.display = 'flex';
+      } else {
+        customDates.style.display = 'none';
+      }
+    });
+  }
 });
 
 async function loadLeads() {
   try {
     // Load all leads without pagination for stats (limit set high)
     const response = await apiCall('/leads?limit=10000');
+    
+    // Handle auth errors or network failures - apiCall returns null
+    if (!response) {
+      console.log('Auth error or network failure - apiCall returned null');
+      return; // Don't show error, apiCall already handles redirect
+    }
+    
     const data = await response.json();
     
     if (response.ok) {
       allLeads = data.leads || data; // Support both new and old format
+      lastLeadCount = allLeads.length; // Update count for change detection
+      populateSourceFilter(allLeads);
+      buildUserSourceMultiSelect();
+      buildUserUniversityMultiSelect();
       updateStats();
+      updateStatusCounts(); // Update status filter counts
       displayLeads();
       // Start reminder system after leads are loaded
       startReminderSystem();
+    } else {
+      console.error('Error loading leads:', data.message);
+      showToast('Error', data.message || 'Failed to load leads', 'error');
     }
   } catch (error) {
     console.error('Error loading leads:', error);
+    // Don't show toast for errors - might be auth redirect in progress
   }
 }
 
 function updateStats() {
-  const stats = {
-    total: allLeads.length,
-    fresh: 0,
-    followup: 0,
-    enrolled: 0
-  };
-  
-  allLeads.forEach(lead => {
-    if (lead.status === 'Fresh') stats.fresh++;
-    if (lead.status === 'Follow up') stats.followup++;
-    if (lead.status === 'Enrolled') stats.enrolled++;
-  });
-  
-  document.getElementById('stat-total').textContent = stats.total;
-  document.getElementById('stat-new').textContent = stats.fresh;
-  document.getElementById('stat-hot').textContent = stats.followup;
-  document.getElementById('stat-closed').textContent = stats.enrolled;
-  
+  // Stats cards removed, only update analytics
   updateAnalytics();
 }
 
@@ -500,12 +918,24 @@ function updateAnalytics() {
   // Recent activity section removed - only dashboard activity needed
 }
 
-function displayLeads() {
-  const filterStatus = document.getElementById('filter-status').value;
+// Update status filter counts
+function updateStatusCounts() {
+  if (!allLeads) return;
+  
+  // Get filtered leads using the same logic as displayLeads
   const filterSearch = document.getElementById('filter-search').value.toLowerCase();
+  const filterDate = document.getElementById('filter-date').value;
+  const filterCustomDateStart = document.getElementById('filter-custom-date').value;
+  const filterCustomDateEndEl = document.getElementById('filter-custom-date-end');
+  const filterCustomDateEnd = filterCustomDateEndEl ? filterCustomDateEndEl.value : '';
+  // Build custom date object for range
+  const customDateValue = filterDate === 'custom' ? { start: filterCustomDateStart, end: filterCustomDateEnd || filterCustomDateStart } : filterCustomDateStart;
   
   const filteredLeads = allLeads.filter(lead => {
-    const matchesStatus = !filterStatus || lead.status === filterStatus;
+    // Multi-select source filter
+    const matchesSource = userSelectedSourceFilters.length === 0 || userSelectedSourceFilters.includes(lead.source || 'Other');
+    // Multi-select university filter
+    const matchesUniversity = userSelectedUniversityFilters.length === 0 || userSelectedUniversityFilters.includes(lead.university || 'Not Specified');
     const matchesSearch = !filterSearch || 
       (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
       (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
@@ -515,7 +945,100 @@ function displayLeads() {
       (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
       (lead.source && lead.source.toLowerCase().includes(filterSearch));
     
-    return matchesStatus && matchesSearch;
+    // Date filtering - check if lead has ANY activity (status, notes, transfer) on date
+    const matchesDate = checkLeadHasActivityOnDate(lead, filterDate, customDateValue);
+    
+    const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
+    return matchesSource && matchesUniversity && matchesSearch && matchesDate && matchesNoAction;
+  });
+  
+  const statusCounts = {
+    all: filteredLeads.length,
+    'Fresh': 0,
+    'Buffer fresh': 0,
+    'Did not pick': 0,
+    'Request call back': 0,
+    'Follow up': 0,
+    'Counselled': 0,
+    'Interested in next batch': 0,
+    'Registration fees paid': 0,
+    'Enrolled': 0,
+    'Junk/not interested': 0
+  };
+  
+  filteredLeads.forEach(lead => {
+    if (statusCounts[lead.status] !== undefined) {
+      statusCounts[lead.status]++;
+    }
+  });
+  
+  // Update count elements
+  const countEl = (id) => document.getElementById(`count-${id}`);
+  if (countEl('all')) countEl('all').textContent = statusCounts.all;
+  if (countEl('fresh')) countEl('fresh').textContent = statusCounts['Fresh'];
+  if (countEl('buffer-fresh')) countEl('buffer-fresh').textContent = statusCounts['Buffer fresh'];
+  if (countEl('did-not-pick')) countEl('did-not-pick').textContent = statusCounts['Did not pick'];
+  if (countEl('request-call-back')) countEl('request-call-back').textContent = statusCounts['Request call back'];
+  if (countEl('follow-up')) countEl('follow-up').textContent = statusCounts['Follow up'];
+  if (countEl('counselled')) countEl('counselled').textContent = statusCounts['Counselled'];
+  if (countEl('interested')) countEl('interested').textContent = statusCounts['Interested in next batch'];
+  if (countEl('fees-paid')) countEl('fees-paid').textContent = statusCounts['Registration fees paid'];
+  if (countEl('enrolled')) countEl('enrolled').textContent = statusCounts['Enrolled'];
+  if (countEl('junk')) countEl('junk').textContent = statusCounts['Junk/not interested'];
+}
+
+// Populate source filter options dynamically
+function populateSourceFilter(leads) {
+  const sourceSelect = document.getElementById('filter-source');
+  if (!sourceSelect || !Array.isArray(leads)) return;
+  const sources = [...new Set(leads.map(l => l.source || 'Other'))].sort();
+  const currentValue = sourceSelect.value;
+  sourceSelect.innerHTML = '<option value="">All Sources</option>';
+  sources.forEach(src => {
+    const option = document.createElement('option');
+    option.value = src;
+    option.textContent = src;
+    sourceSelect.appendChild(option);
+  });
+  // Preserve selection if still valid
+  if (sources.includes(currentValue)) {
+    sourceSelect.value = currentValue;
+  }
+}
+
+function displayLeads() {
+  const filterSearch = document.getElementById('filter-search').value.toLowerCase();
+  const filterDate = document.getElementById('filter-date').value;
+  const filterCustomDateStart = document.getElementById('filter-custom-date').value;
+  const filterCustomDateEndEl = document.getElementById('filter-custom-date-end');
+  const filterCustomDateEnd = filterCustomDateEndEl ? filterCustomDateEndEl.value : '';
+  // Build custom date object for range
+  const customDateValue = filterDate === 'custom' ? { start: filterCustomDateStart, end: filterCustomDateEnd || filterCustomDateStart } : filterCustomDateStart;
+  
+  // Update status counts
+  updateStatusCounts();
+  
+  const filteredLeads = allLeads.filter(lead => {
+    // Multi-select status filter
+    const matchesStatus = userSelectedStatusFilters.length === 0 || userSelectedStatusFilters.includes(lead.status);
+    // Multi-select source filter
+    const matchesSource = userSelectedSourceFilters.length === 0 || userSelectedSourceFilters.includes(lead.source || 'Other');
+    // Multi-select university filter
+    const matchesUniversity = userSelectedUniversityFilters.length === 0 || userSelectedUniversityFilters.includes(lead.university || 'Not Specified');
+    const matchesSearch = !filterSearch || 
+      (lead.name && lead.name.toLowerCase().includes(filterSearch)) ||
+      (lead.email && lead.email.toLowerCase().includes(filterSearch)) ||
+      (lead.city && lead.city.toLowerCase().includes(filterSearch)) ||
+      (lead.university && lead.university.toLowerCase().includes(filterSearch)) ||
+      (lead.course && lead.course.toLowerCase().includes(filterSearch)) ||
+      (lead.profession && lead.profession.toLowerCase().includes(filterSearch)) ||
+      (lead.source && lead.source.toLowerCase().includes(filterSearch));
+    
+    // Date filtering - check if lead has ANY activity (status, notes, transfer) on date
+    const matchesDate = checkLeadHasActivityOnDate(lead, filterDate, customDateValue);
+    
+    const matchesNoAction = !userNoActionFilterActive || checkUserLeadNoAction(lead, userNoActionFilterConfig);
+    return matchesStatus && matchesSource && matchesUniversity && matchesSearch && matchesDate && matchesNoAction;
   });
   
   const container = document.getElementById('leads-container');
@@ -549,16 +1072,37 @@ function displayLeads() {
   leadsToShow.forEach(lead => {
     const leadCard = document.createElement('div');
     leadCard.className = 'lead-card';
-    leadCard.onclick = () => openLeadModal(lead);
+    leadCard.onclick = (e) => {
+      // Don't open modal if clicking copy buttons
+      if (e.target.closest('.copy-icon') || e.target.closest('.copy-all-btn')) {
+        e.stopPropagation();
+        return;
+      }
+      openLeadModal(lead);
+    };
+    
+    // Escape quotes in lead data for inline JSON
+    const leadJson = JSON.stringify(lead).replace(/"/g, '&quot;');
     
     leadCard.innerHTML = `
       <div class="lead-header">
         <div class="lead-name">${lead.name}</div>
-        <span class="lead-status status-${(lead.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${lead.status}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="lead-status status-${(lead.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${lead.status}</span>
+          <button class="copy-all-btn" onclick="event.stopPropagation(); copyAllLeadDetails(${leadJson})" title="Copy all details">
+            <i class="fas fa-copy"></i> Copy All
+          </button>
+        </div>
       </div>
       <div class="lead-info">
-        <div><strong>Contact:</strong> ${lead.contact || 'N/A'}</div>
-        <div><strong>Email:</strong> ${lead.email || 'N/A'}</div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span><strong>Contact:</strong> ${lead.contact || 'N/A'}</span>
+          ${lead.contact ? `<i class="fas fa-copy copy-icon" onclick="event.stopPropagation(); copyToClipboard('${lead.contact}', 'Contact')" title="Copy contact"></i>` : ''}
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span><strong>Email:</strong> ${lead.email || 'N/A'}</span>
+          ${lead.email ? `<i class="fas fa-copy copy-icon" onclick="event.stopPropagation(); copyToClipboard('${lead.email}', 'Email')" title="Copy email"></i>` : ''}
+        </div>
         <div><strong>City:</strong> ${lead.city || 'N/A'}</div>
         <div><strong>University:</strong> ${lead.university || 'N/A'}</div>
         <div><strong>Course:</strong> ${lead.course || 'N/A'}</div>
@@ -737,13 +1281,16 @@ async function openLeadModal(lead) {
   // Display next call date if exists
   displayFollowUpSchedule(lead.nextCallDateTime);
   
-  document.getElementById('lead-modal').style.display = 'flex';
+  const leadModal = document.getElementById('lead-modal');
+  leadModal.style.display = 'flex';
+  // Trigger slide-in animation on next frame
+  requestAnimationFrame(() => {
+    leadModal.classList.add('open');
+  });
 }
 
 function displayFollowUpSchedule(nextCallDateTime) {
   const input = document.getElementById('modal-followup-datetime');
-  const display = document.getElementById('current-followup-display');
-  const displayTime = document.getElementById('followup-display-time');
   
   if (nextCallDateTime) {
     // Convert to local datetime format for input
@@ -752,21 +1299,26 @@ function displayFollowUpSchedule(nextCallDateTime) {
       .toISOString()
       .slice(0, 16);
     input.value = localDateTime;
-    
-    // Show scheduled time
-    displayTime.textContent = date.toLocaleString();
-    display.style.display = 'block';
   } else {
     input.value = '';
-    display.style.display = 'none';
   }
 }
 
 function closeModal() {
-  document.getElementById('lead-modal').style.display = 'none';
-  document.getElementById('quick-update-note').value = '';
-  document.getElementById('modal-lead-status').value = '';
-  currentLead = null;
+  const leadModal = document.getElementById('lead-modal');
+  if (!leadModal) return;
+  // Start slide-out
+  leadModal.classList.remove('open');
+  // After transition, hide and reset fields
+  const HIDE_DELAY = 300;
+  setTimeout(() => {
+    leadModal.style.display = 'none';
+    const noteEl = document.getElementById('quick-update-note');
+    const statusEl = document.getElementById('modal-lead-status');
+    if (noteEl) noteEl.value = '';
+    if (statusEl) statusEl.value = '';
+    currentLead = null;
+  }, HIDE_DELAY);
 }
 
 // Global escape key handler for modal
@@ -783,8 +1335,21 @@ document.addEventListener('keydown', (e) => {
 function quickFilter(status) {
   console.log('Quick filter clicked:', status);
   window.currentLeadsPage = 1; // Reset pagination
-  document.getElementById('filter-status').value = status;
+  
+  // Clear other filters
   document.getElementById('filter-search').value = '';
+  
+  // Set multi-select status filter to only selected status
+  userSelectedStatusFilters = status ? [status] : [];
+  
+  // Update checkboxes to match
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = status ? cb.value === status : false;
+  });
+  
+  // Update toggle label
+  updateUserStatusFilterLabel();
+  
   displayLeads();
   
   // Scroll to leads section with a small delay
@@ -801,11 +1366,132 @@ function quickFilter(status) {
   });
 }
 
+// Date matching helper function
+function checkDateMatch(date, filterType, customDate) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const compareDate = new Date(date);
+  compareDate.setHours(0, 0, 0, 0);
+  
+  switch (filterType) {
+    case 'today':
+      return compareDate.getTime() === today.getTime();
+    
+    case 'yesterday':
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return compareDate.getTime() === yesterday.getTime();
+    
+    case 'thisweek':
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay());
+      return compareDate >= weekStart && compareDate <= today;
+    
+    case 'lastweek':
+      const lastWeekEnd = new Date(today);
+      lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+      return compareDate >= lastWeekStart && compareDate <= lastWeekEnd;
+    
+    case 'thismonth':
+      return compareDate.getMonth() === today.getMonth() && 
+             compareDate.getFullYear() === today.getFullYear();
+    
+    case 'custom':
+      if (!customDate) return true;
+      // customDate can be {start, end} for range or just a date string
+      if (typeof customDate === 'object' && customDate.start) {
+        const startDate = new Date(customDate.start);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = customDate.end ? new Date(customDate.end) : new Date(customDate.start);
+        endDate.setHours(23, 59, 59, 999);
+        return compareDate >= startDate && compareDate <= endDate;
+      } else {
+        const customCompare = new Date(customDate);
+        customCompare.setHours(0, 0, 0, 0);
+        return compareDate.getTime() === customCompare.getTime();
+      }
+    
+    default:
+      return true;
+  }
+}
+
+// Check if lead has any activity (status change, note, or transfer) on the given date range
+function checkLeadHasActivityOnDate(lead, filterType, customDate) {
+  if (!filterType) return true;
+  
+  const activityDates = [];
+  
+  // Check status history dates
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    lead.statusHistory.forEach(entry => {
+      if (entry.changedAt) activityDates.push(new Date(entry.changedAt));
+    });
+  }
+  
+  // Check notes dates
+  if (lead.notes && lead.notes.length > 0) {
+    lead.notes.forEach(note => {
+      if (note.createdAt) activityDates.push(new Date(note.createdAt));
+    });
+  }
+  
+  // Check assignment/transfer history dates (for this user)
+  if (lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+    lead.assignmentHistory.forEach(entry => {
+      // Include if user was assigned TO (transfer to them)
+      if (entry.toUser && (entry.toUser._id === window.currentUserId || entry.toUser === window.currentUserId)) {
+        if (entry.changedAt) activityDates.push(new Date(entry.changedAt));
+      }
+    });
+  }
+  
+  // Also include lead creation date as an activity
+  if (lead.createdAt) activityDates.push(new Date(lead.createdAt));
+  
+  // Also include updatedAt as activity indicator
+  if (lead.updatedAt) activityDates.push(new Date(lead.updatedAt));
+  
+  // Check if any activity date matches the filter
+  return activityDates.some(date => checkDateMatch(date, filterType, customDate));
+}
+
 // Clear filters function
 function clearFilters() {
   window.currentLeadsPage = 1; // Reset pagination
+  
+  // Reset multi-select status filter
+  userSelectedStatusFilters = [];
+  const statusToggle = document.getElementById('user-status-toggle');
+  if (statusToggle) statusToggle.textContent = 'All Statuses';
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Reset multi-select source filter
+  userSelectedSourceFilters = [];
+  const sourceToggle = document.getElementById('user-source-toggle');
+  if (sourceToggle) sourceToggle.textContent = 'All Sources';
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Reset multi-select university filter
+  userSelectedUniversityFilters = [];
+  const universityToggle = document.getElementById('user-university-toggle');
+  if (universityToggle) universityToggle.textContent = 'All Universities';
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  // Keep hidden inputs for backward compatibility
   document.getElementById('filter-status').value = '';
+  document.getElementById('filter-source').value = '';
   document.getElementById('filter-search').value = '';
+  document.getElementById('filter-date').value = '';
+  const customDateRange = document.getElementById('custom-date-range');
+  if (customDateRange) customDateRange.style.display = 'none';
+  document.getElementById('filter-custom-date').value = '';
+  const customDateEnd = document.getElementById('filter-custom-date-end');
+  if (customDateEnd) customDateEnd.value = '';
+  clearUserNoActionFilter(false);
   displayLeads();
 }
 
@@ -828,9 +1514,13 @@ function displayTimeline(lead) {
     });
   }
   
-  // Add notes
+  // Add notes (but exclude 'Lead added by' notes as they're handled separately)
   if (lead.notes && lead.notes.length > 0) {
     lead.notes.forEach(note => {
+      // Skip 'Lead added by' notes as they're shown as special timeline entries
+      if (note.content && note.content.startsWith('Lead added by')) {
+        return;
+      }
       timeline.push({
         type: 'note',
         content: note.content,
@@ -838,6 +1528,35 @@ function displayTimeline(lead) {
         dateStr: note.createdAt
       });
     });
+  }
+  
+  // Add assignment history (transfers)
+  if (lead.assignmentHistory && lead.assignmentHistory.length > 0) {
+    lead.assignmentHistory.forEach(entry => {
+      const fromName = entry.fromUser && entry.fromUser.name ? entry.fromUser.name : 'None';
+      const toName = entry.toUser && entry.toUser.name ? entry.toUser.name : 'Unknown';
+      timeline.push({
+        type: 'transfer',
+        action: entry.action,
+        fromUser: fromName,
+        toUser: toName,
+        date: new Date(entry.changedAt),
+        dateStr: entry.changedAt
+      });
+    });
+  }
+  
+  // Check if lead was added manually (check first note for "Lead added by")
+  if (lead.notes && lead.notes.length > 0) {
+    const addedNote = lead.notes.find(note => note.content && note.content.startsWith('Lead added by'));
+    if (addedNote) {
+      timeline.push({
+        type: 'leadAdded',
+        content: addedNote.content,
+        date: new Date(addedNote.createdAt),
+        dateStr: addedNote.createdAt
+      });
+    }
   }
   
   if (timeline.length === 0) {
@@ -854,20 +1573,46 @@ function displayTimeline(lead) {
     
     if (entry.type === 'status') {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
-          <strong>Status changed to:</strong> 
-          <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #6366f1;"></i>
+            <strong>Status changed to:</strong> 
+            <span class="lead-status status-${(entry.content||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
+      `;
+    } else if (entry.type === 'transfer') {
+      const fromName = entry.fromUser ? entry.fromUser : 'None';
+      const toName = entry.toUser ? entry.toUser : 'Unknown';
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exchange-alt" style="color: #f59e0b;"></i>
+            <strong>${entry.action}</strong> ${fromName} ➝ ${toName}
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
+        </div>
+      `;
+    } else if (entry.type === 'leadAdded') {
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-plus-circle" style="color: #10b981;"></i>
+            <span>${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
+        </div>
       `;
     } else {
       item.innerHTML = `
-        <div class="note-content" style="display: flex; gap: 8px;">
-          <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
-          <span>${entry.content}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="note-content" style="display: flex; gap: 8px;">
+            <i class="fas fa-comment-dots" style="color: #10b981; margin-top: 2px;"></i>
+            <span>${entry.content}</span>
+          </div>
+          <div class="note-date">${formatDateTime(entry.date)}</div>
         </div>
-        <div class="note-date">${entry.date.toLocaleString()}</div>
       `;
     }
     
@@ -892,7 +1637,7 @@ function displayStatusHistory(history) {
     historyItem.className = 'note-item';
     historyItem.innerHTML = `
       <div class="note-content"><strong>Status changed to:</strong> <span class="lead-status status-${(entry.status||'').toLowerCase().replace(/[^a-z0-9]+/g,'-')}">${entry.status}</span></div>
-      <div class="note-date">${new Date(entry.changedAt).toLocaleString()}</div>
+      <div class="note-date">${formatDateTime(entry.changedAt)}</div>
     `;
     container.appendChild(historyItem);
   });
@@ -915,7 +1660,7 @@ function displayNotes(notes) {
     noteItem.className = 'note-item';
     noteItem.innerHTML = `
       <div class="note-content">${note.content}</div>
-      <div class="note-date">${new Date(note.createdAt).toLocaleString()}</div>
+      <div class="note-date">${formatDateTime(note.createdAt)}</div>
     `;
     container.appendChild(noteItem);
   });
@@ -988,6 +1733,11 @@ async function quickUpdateLead() {
       if (dateTimeValue) updates.push('schedule');
       
       showToast('Success', `Lead updated successfully! (${updates.join(', ')})`, 'success');
+      // Close the modal after successful update
+      closeModal();
+      
+      // Update timestamp to prevent self-notification
+      lastCheckTimestamp = Date.now();
       
       // Start checking for this reminder if scheduled
       if (dateTimeValue) {
@@ -1154,11 +1904,407 @@ function debounce(func, wait) {
   };
 }
 
-// Event listeners for filters
-document.getElementById('filter-status').addEventListener('change', () => {
-  window.currentLeadsPage = 1; // Reset pagination on filter change
+// ===== USER MULTI-SELECT FILTER FUNCTIONS =====
+
+// Status filter multi-select functions
+function selectAllUserStatuses() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedStatusFilters.push(cb.value);
+  });
+  updateUserStatusFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function clearUserStatusFilter() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserStatusFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserStatusFilter() {
+  userSelectedStatusFilters = [];
+  document.querySelectorAll('#user-status-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedStatusFilters.push(cb.value);
+  });
+  updateUserStatusFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserStatusFilterLabel() {
+  const toggle = document.getElementById('user-status-toggle');
+  if (userSelectedStatusFilters.length === 0) {
+    toggle.textContent = 'All Statuses';
+  } else if (userSelectedStatusFilters.length === 1) {
+    toggle.textContent = userSelectedStatusFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedStatusFilters.length} statuses`;
+  }
+}
+
+// Source filter multi-select functions
+function buildUserSourceMultiSelect() {
+  const toggle = document.getElementById('user-source-toggle');
+  const dropdown = document.getElementById('user-source-dropdown');
+  if (!toggle || !dropdown || !allLeads) return;
+
+  // Collect unique sources
+  const sources = new Set();
+  allLeads.forEach(lead => {
+    sources.add(lead.source || 'Other');
+  });
+  const sortedSources = Array.from(sources).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserSources();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserSourceFilter();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all sources
+  sortedSources.forEach(source => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = source;
+    cb.onchange = () => updateUserSourceFilter();
+    const span = document.createElement('span');
+    span.textContent = source;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserSources() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedSourceFilters.push(cb.value);
+  });
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function clearUserSourceFilter() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserSourceFilter() {
+  userSelectedSourceFilters = [];
+  document.querySelectorAll('#user-source-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedSourceFilters.push(cb.value);
+  });
+  updateUserSourceFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserSourceFilterLabel() {
+  const toggle = document.getElementById('user-source-toggle');
+  if (userSelectedSourceFilters.length === 0) {
+    toggle.textContent = 'All Sources';
+  } else if (userSelectedSourceFilters.length === 1) {
+    toggle.textContent = userSelectedSourceFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedSourceFilters.length} sources`;
+  }
+}
+
+// University filter multi-select functions
+function buildUserUniversityMultiSelect() {
+  const toggle = document.getElementById('user-university-toggle');
+  const dropdown = document.getElementById('user-university-dropdown');
+  if (!toggle || !dropdown || !allLeads) return;
+
+  // Collect unique universities
+  const universities = new Set();
+  allLeads.forEach(lead => {
+    universities.add(lead.university || 'Not Specified');
+  });
+  const sortedUniversities = Array.from(universities).sort();
+
+  dropdown.innerHTML = '';
+
+  // Actions row
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+  
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'btn btn-secondary';
+  selectAllBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  selectAllBtn.textContent = 'Select All';
+  selectAllBtn.onclick = () => selectAllUserUniversities();
+  
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-secondary';
+  clearBtn.style.cssText = 'font-size: 11px; padding: 4px 8px;';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = () => clearUserUniversityFilter();
+  
+  actions.appendChild(selectAllBtn);
+  actions.appendChild(clearBtn);
+  dropdown.appendChild(actions);
+
+  // Add all universities
+  sortedUniversities.forEach(university => {
+    const item = document.createElement('label');
+    item.className = 'multi-select-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = university;
+    cb.onchange = () => updateUserUniversityFilter();
+    const span = document.createElement('span');
+    span.textContent = university;
+    item.appendChild(cb);
+    item.appendChild(span);
+    dropdown.appendChild(item);
+  });
+}
+
+function selectAllUserUniversities() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    userSelectedUniversityFilters.push(cb.value);
+  });
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function clearUserUniversityFilter() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserUniversityFilter() {
+  userSelectedUniversityFilters = [];
+  document.querySelectorAll('#user-university-dropdown input[type="checkbox"]:checked').forEach(cb => {
+    userSelectedUniversityFilters.push(cb.value);
+  });
+  updateUserUniversityFilterLabel();
+  window.currentLeadsPage = 1;
+  displayLeads();
+}
+
+function updateUserUniversityFilterLabel() {
+  const toggle = document.getElementById('user-university-toggle');
+  if (userSelectedUniversityFilters.length === 0) {
+    toggle.textContent = 'All Universities';
+  } else if (userSelectedUniversityFilters.length === 1) {
+    toggle.textContent = userSelectedUniversityFilters[0];
+  } else {
+    toggle.textContent = `${userSelectedUniversityFilters.length} universities`;
+  }
+}
+
+// Initialize user multi-select dropdowns toggle behavior
+function initUserMultiSelectDropdowns() {
+  const multiSelects = [
+    { toggle: 'user-status-toggle', dropdown: 'user-status-dropdown', container: 'user-status-multiselect' },
+    { toggle: 'user-source-toggle', dropdown: 'user-source-dropdown', container: 'user-source-multiselect' },
+    { toggle: 'user-university-toggle', dropdown: 'user-university-dropdown', container: 'user-university-multiselect' }
+  ];
+
+  multiSelects.forEach(ms => {
+    const toggle = document.getElementById(ms.toggle);
+    const dropdown = document.getElementById(ms.dropdown);
+    if (toggle && dropdown) {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close other dropdowns
+        multiSelects.forEach(other => {
+          if (other.dropdown !== ms.dropdown) {
+            const otherDropdown = document.getElementById(other.dropdown);
+            if (otherDropdown) otherDropdown.style.display = 'none';
+          }
+        });
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', (e) => {
+    multiSelects.forEach(ms => {
+      const container = document.getElementById(ms.container);
+      const dropdown = document.getElementById(ms.dropdown);
+      if (container && dropdown && !container.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+  });
+}
+
+// ===== END USER MULTI-SELECT FILTER FUNCTIONS =====
+
+// Date filter event listener
+document.getElementById('filter-date').addEventListener('change', (e) => {
+  const customDateRange = document.getElementById('custom-date-range');
+  const customDateInput = document.getElementById('filter-custom-date');
+  const customDateEndInput = document.getElementById('filter-custom-date-end');
+  if (e.target.value === 'custom') {
+    if (customDateRange) customDateRange.style.display = 'flex';
+  } else {
+    if (customDateRange) customDateRange.style.display = 'none';
+    if (customDateInput) customDateInput.value = '';
+    if (customDateEndInput) customDateEndInput.value = '';
+  }
+  window.currentLeadsPage = 1;
   displayLeads();
 });
+
+// Custom date range input event listeners
+document.getElementById('filter-custom-date').addEventListener('change', () => {
+  window.currentLeadsPage = 1;
+  displayLeads();
+});
+
+const customDateEndEl = document.getElementById('filter-custom-date-end');
+if (customDateEndEl) {
+  customDateEndEl.addEventListener('change', () => {
+    window.currentLeadsPage = 1;
+    displayLeads();
+  });
+}
+
+// User no action filter controls
+function toggleUserNoActionFilter() {
+  const panel = document.getElementById('user-no-action-filter-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function clearUserNoActionFilter(shouldHidePanel = true) {
+  const period = document.getElementById('user-no-action-period');
+  const start = document.getElementById('user-no-action-start-date');
+  const end = document.getElementById('user-no-action-end-date');
+  const customDates = document.getElementById('user-no-action-custom-dates');
+  const status = document.getElementById('user-no-action-filter-status');
+  if (period) period.value = '7';
+  if (start) start.value = '';
+  if (end) end.value = '';
+  if (customDates) customDates.style.display = 'none';
+  if (status) status.innerHTML = '<i class="fas fa-info-circle"></i> Shows leads assigned to you with no status change or note in the selected period.';
+  userNoActionFilterActive = false;
+  userNoActionFilterConfig = { days: 7, startDate: null, endDate: null };
+  if (shouldHidePanel) {
+    const panel = document.getElementById('user-no-action-filter-panel');
+    if (panel) panel.style.display = 'none';
+  }
+}
+
+function applyUserNoActionFilter() {
+  const period = document.getElementById('user-no-action-period').value;
+  const status = document.getElementById('user-no-action-filter-status');
+  if (period === 'custom') {
+    const start = document.getElementById('user-no-action-start-date').value;
+    const end = document.getElementById('user-no-action-end-date').value;
+    if (!start || !end) {
+      showToast('Date Required', 'Select both start and end dates', 'warning');
+      return;
+    }
+    if (new Date(start) > new Date(end)) {
+      showToast('Invalid Date Range', 'Start date must be before end date', 'warning');
+      return;
+    }
+    userNoActionFilterConfig = { days: null, startDate: start, endDate: end };
+  } else {
+    userNoActionFilterConfig = { days: parseInt(period, 10), startDate: null, endDate: null };
+  }
+
+  userNoActionFilterActive = true;
+  if (status) {
+    if (userNoActionFilterConfig.days) {
+      const labels = {
+        1: 'last 24 hours',
+        3: 'last 3 days',
+        7: 'last 7 days',
+        15: 'last 15 days',
+        30: 'last 30 days'
+      };
+      status.innerHTML = `<i class="fas fa-check-circle"></i> Showing leads with no activity in the ${labels[userNoActionFilterConfig.days] || userNoActionFilterConfig.days + ' days'}`;
+    } else {
+      status.innerHTML = `<i class="fas fa-check-circle"></i> Showing leads with no activity from ${userNoActionFilterConfig.startDate} to ${userNoActionFilterConfig.endDate}`;
+    }
+  }
+  displayLeads();
+}
+
+function checkUserLeadNoAction(lead, config) {
+  if (!lead) return false;
+  const now = new Date();
+  let startDate;
+  let endDate;
+  if (config.days) {
+    endDate = now;
+    startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - config.days);
+  } else {
+    startDate = new Date(config.startDate);
+    endDate = new Date(config.endDate);
+    endDate.setHours(23, 59, 59, 999);
+  }
+
+  const leadCreated = new Date(lead.createdAt);
+  if (leadCreated > endDate) return false;
+  const effectiveStart = leadCreated > startDate ? leadCreated : startDate;
+
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    for (let i = 1; i < lead.statusHistory.length; i++) {
+      const changeDate = new Date(lead.statusHistory[i].changedAt);
+      if (changeDate >= effectiveStart && changeDate <= endDate) {
+        return false;
+      }
+    }
+  }
+
+  if (lead.notes && lead.notes.length > 0) {
+    for (const note of lead.notes) {
+      const noteDate = new Date(note.createdAt);
+      if (noteDate >= effectiveStart && noteDate <= endDate) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Debounced search to avoid excessive re-renders
 document.getElementById('filter-search').addEventListener('input', debounce(() => {
   window.currentLeadsPage = 1; // Reset pagination on search
@@ -1680,7 +2826,7 @@ function updateNotificationPanel() {
     list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No pending reminders</div>';
   } else {
     list.innerHTML = activeReminders.map(reminder => {
-      const timeStr = new Date(reminder.time).toLocaleString();
+      const timeStr = formatDateTime(reminder.time);
       const statusClass = reminder.isOverdue ? 'overdue' : 'upcoming';
       const statusText = reminder.isOverdue ? 'OVERDUE' : 'UPCOMING';
       
@@ -1743,6 +2889,8 @@ window.addEventListener('beforeunload', () => {
   if (reminderCheckInterval) {
     clearInterval(reminderCheckInterval);
   }
+  // Stop update polling
+  stopUpdatePolling();
 });
 
 // Function to display brochures in modal
@@ -1891,3 +3039,209 @@ function toggleBrochureSection() {
     icon.style.transform = 'rotate(0deg)';
   }
 }
+
+// Copy to clipboard functionality
+function copyToClipboard(text, label) {
+  navigator.clipboard.writeText(text).then(() => {
+    showCopyToast(`${label} copied!`);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showCopyToast('Failed to copy', 'error');
+  });
+}
+
+// Copy all lead details
+function copyAllLeadDetails(lead) {
+  const details = `Name: ${lead.name}
+Contact: ${lead.contact || 'N/A'}
+Email: ${lead.email || 'N/A'}
+City: ${lead.city || 'N/A'}
+University: ${lead.university || 'N/A'}
+Course: ${lead.course || 'N/A'}
+Profession: ${lead.profession || 'N/A'}
+Source: ${lead.source || 'Other'}
+Status: ${lead.status || 'N/A'}`;
+  
+  navigator.clipboard.writeText(details).then(() => {
+    showCopyToast('All details copied!');
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    showCopyToast('Failed to copy', 'error');
+  });
+}
+
+// Simple toast for copy notifications
+function showCopyToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: ${type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'};
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: slideInRight 0.3s ease;
+  `;
+  toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>${message}`;
+  
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    toast.style.transition = 'all 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+// Add CSS animation
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(style);
+// Add Lead Modal Functions
+function openAddLeadModal() {
+  document.getElementById('add-lead-modal').style.display = 'flex';
+  document.getElementById('add-lead-form').reset();
+  document.getElementById('add-lead-message').style.display = 'none';
+  document.getElementById('add-lead-custom-source').style.display = 'none';
+}
+
+function closeAddLeadModal() {
+  document.getElementById('add-lead-modal').style.display = 'none';
+  document.getElementById('add-lead-form').reset();
+  document.getElementById('add-lead-message').style.display = 'none';
+  document.getElementById('add-lead-custom-source').style.display = 'none';
+}
+
+// Toggle custom source input
+function toggleCustomSource() {
+  const sourceSelect = document.getElementById('add-lead-source');
+  const customInput = document.getElementById('add-lead-custom-source');
+  
+  if (sourceSelect.value === '__custom__') {
+    customInput.style.display = 'block';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+  }
+}
+
+// Handle Add Lead Form Submission
+document.getElementById('add-lead-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const name = document.getElementById('add-lead-name').value.trim();
+  const contact = document.getElementById('add-lead-contact').value.trim();
+  const email = document.getElementById('add-lead-email').value.trim();
+  const city = document.getElementById('add-lead-city').value.trim();
+  const profession = document.getElementById('add-lead-profession').value.trim();
+  const university = document.getElementById('add-lead-university').value.trim();
+  const course = document.getElementById('add-lead-course').value.trim();
+  
+  // Handle source - check if custom source is selected
+  let source = document.getElementById('add-lead-source').value;
+  if (source === '__custom__') {
+    source = document.getElementById('add-lead-custom-source').value.trim();
+    if (!source) {
+      showAddLeadMessage('Please enter a custom source name', 'error');
+      return;
+    }
+  }
+  
+  if (!name || !contact) {
+    showAddLeadMessage('Name and Contact are required', 'error');
+    return;
+  }
+  
+  try {
+    showLoading('Adding Lead...', 'Please wait');
+    
+    // Get current user info for the note
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const userName = userData.name || 'User';
+    
+    const leadData = {
+      name,
+      contact,
+      email: email || undefined,
+      city: city || undefined,
+      profession: profession || undefined,
+      university: university || undefined,
+      course: course || undefined,
+      source: source || 'Other',
+      status: 'Fresh',
+      addedByUser: true,
+      initialNote: `Lead added by ${userName}`
+    };
+    
+    const token = getToken();
+    const response = await fetch(`${API_URL}/leads/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(leadData)
+    });
+    
+    hideLoading();
+    
+    if (response.ok) {
+      showToast('Success', 'Lead added successfully', 'success');
+      closeAddLeadModal();
+      // Reload leads and update timestamp to prevent self-notification
+      await loadLeads();
+      lastCheckTimestamp = Date.now();
+    } else {
+      const error = await response.json();
+      showAddLeadMessage(error.message || 'Failed to add lead', 'error');
+    }
+  } catch (error) {
+    hideLoading();
+    console.error('Error adding lead:', error);
+    showAddLeadMessage('An error occurred while adding the lead', 'error');
+  }
+});
+
+function showAddLeadMessage(message, type) {
+  const msgDiv = document.getElementById('add-lead-message');
+  msgDiv.textContent = message;
+  msgDiv.className = type === 'error' ? 'error-message' : 'success-message';
+  msgDiv.style.display = 'block';
+  msgDiv.style.padding = '12px';
+  msgDiv.style.borderRadius = '6px';
+  msgDiv.style.backgroundColor = type === 'error' ? '#fee2e2' : '#d1fae5';
+  msgDiv.style.color = type === 'error' ? '#991b1b' : '#065f46';
+  msgDiv.style.border = type === 'error' ? '1px solid #fecaca' : '1px solid #a7f3d0';
+  
+  setTimeout(() => {
+    msgDiv.style.display = 'none';
+  }, 5000);
+}
+
+// Close modal on outside click
+document.getElementById('add-lead-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'add-lead-modal') {
+    closeAddLeadModal();
+  }
+});

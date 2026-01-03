@@ -1,0 +1,14 @@
+# SSH into droplet
+ssh -i "C:\Users\samth\.ssh\id_ed25519" root@165.232.189.67
+
+# View live logs
+pm2 logs dd-crm
+
+# Check app status
+pm2 status
+
+# Restart app
+pm2 restart dd-crm
+
+# Update code
+cd /var/www/dd-crm && git pull && npm install && pm2 restart dd-crm

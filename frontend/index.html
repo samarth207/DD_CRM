@@ -2,22 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="description" content="DD CRM - Professional Customer Relationship Management System">
   <title>DD CRM - Login</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/favicon.png">
+  
+  <!-- DNS Prefetch & Preconnect for faster external resource loading -->
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- Optimized resource loading -->
+  <link rel="preload" href="css/style.css?v=3.0" as="style">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=3.0">
 </head>
 <body style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;">
   <div style="width: 100%; max-width: 420px;">
     <div class="login-box">
-      <div style="text-align: center; margin-bottom: 28px;">
-        <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; box-shadow: 0 4px 12px rgba(99,102,241,0.3);">
-          <i class="fas fa-address-book" style="color: white; font-size: 24px;"></i>
+      <div style="text-align: center; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+          <img src="assets/logo-icon.png" alt="DegreeDrishti" style="width: auto; height: 70px; filter: drop-shadow(0 4px 12px rgba(0, 61, 92, 0.15)); object-fit: contain;">
         </div>
-        <h1 style="margin-bottom: 6px;">DD CRM</h1>
+        <h1 style="margin-bottom: 02x; font-size: 26px; color: #003d5c;">DegreeDrishti CRM</h1>
         <h2 style="margin-bottom: 0;">Sign in to your account</h2>
       </div>
       
@@ -47,7 +63,7 @@
     <span style="margin-left:16px; color:#9ca3af;">CRM by Samarth</span>
   </footer>
   
-  <script src="js/config.js?v=1.1"></script>
-  <script src="js/auth.js?v=1.1"></script>
+  <script src="js/config.js?v=3.0" defer></script>
+  <script src="js/auth.js?v=3.0" defer></script>
 </body>
 </html>

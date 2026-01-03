@@ -36,6 +36,9 @@ router.get('/', auth, async (req, res) => {
     const [leads, totalCount] = await Promise.all([
       Lead.find(query)
         .select('-__v')
+        .populate('assignmentHistory.fromUser', 'name email')
+        .populate('assignmentHistory.toUser', 'name email')
+        .populate('assignmentHistory.changedBy', 'name email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -53,6 +56,63 @@ router.get('/', auth, async (req, res) => {
       }
     });
   } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Check for updates - returns last update timestamp for user's leads
+// NOTE: This must be BEFORE /:id route to avoid matching "check-updates" as an ID
+router.get('/check-updates', auth, async (req, res) => {
+  try {
+    const lastCheck = req.query.lastCheck ? new Date(parseInt(req.query.lastCheck)) : new Date(0);
+    const lastCount = parseInt(req.query.lastCount) || 0;
+    
+    // Get current total count
+    const currentCount = await Lead.countDocuments({
+      assignedTo: req.userId
+    });
+    
+    // Only check for leads updated by OTHERS (admin), not by the user themselves
+    // This prevents self-triggering notifications when user edits their own leads
+    const updatedOrNewLeads = await Lead.countDocuments({
+      assignedTo: req.userId,
+      $and: [
+        {
+          $or: [
+            { updatedAt: { $gt: lastCheck } },
+            { createdAt: { $gt: lastCheck } }
+          ]
+        },
+        {
+          $or: [
+            { lastUpdatedBy: { $ne: req.userId } }, // Updated by someone else
+            { lastUpdatedBy: { $exists: false } } // New lead without update history
+          ]
+        }
+      ]
+    });
+    
+    // Detect changes: count changed (deletion/addition) OR leads were updated by others
+    const countChanged = lastCount > 0 && currentCount !== lastCount;
+    const hasUpdates = countChanged || updatedOrNewLeads > 0;
+    
+    // Get the most recent timestamp (either update or creation)
+    const latestLead = await Lead.findOne({
+      assignedTo: req.userId
+    })
+    .sort({ updatedAt: -1 })
+    .select('updatedAt')
+    .lean();
+    
+    res.json({
+      hasUpdates,
+      updateCount: updatedOrNewLeads,
+      currentCount,
+      countChanged,
+      latestTimestamp: latestLead ? latestLead.updatedAt.getTime() : Date.now()
+    });
+  } catch (error) {
+    console.error('Error in check-updates:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -115,6 +175,7 @@ router.put('/:id', auth, async (req, res) => {
     }
     
     lead.lastContactDate = new Date();
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     res.json(lead);
   } catch (error) {
@@ -144,6 +205,7 @@ router.put('/:id/field', auth, async (req, res) => {
       lead.course = course;
     }
     
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     res.json(lead);
   } catch (error) {
@@ -176,6 +238,7 @@ router.post('/:id/notes', auth, async (req, res) => {
     });
     
     lead.lastContactDate = new Date();
+    lead.lastUpdatedBy = req.userId; // Track who made this update
     await lead.save();
     
     res.json(lead);
@@ -205,4 +268,80 @@ router.delete('/:id/notes/:noteId', auth, async (req, res) => {
   }
 });
 
+// Add new lead (by user)
+router.post('/add', auth, async (req, res) => {
+  try {
+    const { name, contact, email, city, profession, university, course, source, status, initialNote } = req.body;
+    
+    // Validate required fields
+    if (!name || !contact) {
+      return res.status(400).json({ message: 'Name and contact are required' });
+    }
+    
+    // Check if lead with same contact already exists for this user
+    const existingLead = await Lead.findOne({ 
+      contact, 
+      assignedTo: req.userId 
+    });
+    
+    if (existingLead) {
+      return res.status(400).json({ message: 'A lead with this contact number already exists in your list' });
+    }
+    
+    // Create new lead
+    const now = new Date();
+    const lead = new Lead({
+      name,
+      contact,
+      email,
+      city,
+      profession,
+      university,
+      course,
+      source: source || 'Other',
+      status: status || 'Fresh',
+      assignedTo: req.userId,
+      createdAt: now,
+      updatedAt: now,
+      lastUpdatedBy: req.userId,
+      statusHistory: [{
+        status: status || 'Fresh',
+        changedBy: req.userId,
+        changedAt: now
+      }],
+      assignmentHistory: [{
+        action: 'assigned',
+        fromUser: null,
+        toUser: req.userId,
+        changedBy: req.userId,
+        changedAt: now
+      }]
+    });
+    
+    // Add initial note if provided
+    if (initialNote) {
+      lead.notes.push({
+        content: initialNote,
+        createdBy: req.userId,
+        createdAt: new Date()
+      });
+    }
+    
+    await lead.save();
+    
+    // Populate the lead data before sending response
+    await lead.populate('assignedTo', 'name email');
+    await lead.populate('assignmentHistory.fromUser', 'name email');
+    await lead.populate('assignmentHistory.toUser', 'name email');
+    await lead.populate('assignmentHistory.changedBy', 'name email');
+    
+    res.status(201).json(lead);
+  } catch (error) {
+    console.error('Error adding lead:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 module.exports = router;
+
+
