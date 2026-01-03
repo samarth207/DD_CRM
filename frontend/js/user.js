@@ -125,6 +125,47 @@ function formatDateTime(date) {
   });
 }
 
+// Calculate time elapsed in days
+function formatTimeSince(dateString) {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = now - date;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'N/A';
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return '1 day';
+  
+  return `${diffDays} days`;
+}
+
+// Get the date of last activity (status change or note added)
+function getLastActivityDate(lead) {
+  let lastActivity = null;
+  
+  // Check status history for last status change
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    const lastStatusChange = lead.statusHistory[lead.statusHistory.length - 1];
+    if (lastStatusChange.changedAt) {
+      lastActivity = new Date(lastStatusChange.changedAt);
+    }
+  }
+  
+  // Check notes for last note added
+  if (lead.notes && lead.notes.length > 0) {
+    const lastNote = lead.notes[lead.notes.length - 1];
+    if (lastNote.createdAt) {
+      const noteDate = new Date(lastNote.createdAt);
+      if (!lastActivity || noteDate > lastActivity) {
+        lastActivity = noteDate;
+      }
+    }
+  }
+  
+  return lastActivity;
+}
+
 // Show loading overlay
 function showLoading(message = 'Processing...', submessage = 'Please wait') {
   document.getElementById('loading-message').textContent = message;
@@ -1084,6 +1125,10 @@ function displayLeads() {
     // Escape quotes in lead data for inline JSON
     const leadJson = JSON.stringify(lead).replace(/"/g, '&quot;');
     
+    const leadAge = formatTimeSince(lead.createdAt);
+    const lastActivityDate = getLastActivityDate(lead);
+    const lastActivityStr = lastActivityDate ? formatTimeSince(lastActivityDate) : 'No activity';
+    
     leadCard.innerHTML = `
       <div class="lead-header">
         <div class="lead-name">${lead.name}</div>
@@ -1108,6 +1153,7 @@ function displayLeads() {
         <div><strong>Course:</strong> ${lead.course || 'N/A'}</div>
         <div><strong>Profession:</strong> ${lead.profession || 'N/A'}</div>
         <div><strong>Source:</strong> ${lead.source || 'Other'}</div>
+        <div style="display: flex; gap: 16px;"><span style="color: #6366f1; white-space: nowrap;"><i class="fas fa-calendar-plus"></i> <strong>Age:</strong> <span style="color: #374151;">${leadAge}</span></span><span style="color: #10b981; white-space: nowrap;"><i class="fas fa-clock"></i> <strong>Activity:</strong> <span style="color: #374151;">${lastActivityStr}</span></span></div>
       </div>
     `;
     

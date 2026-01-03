@@ -533,7 +533,7 @@ For issues, questions, or feature requests, please contact your system administr
 
 ## 📄 License
 
-Copyright © 2025 DD CRM. All rights reserved.
+Copyright © 2026 DD CRM. All rights reserved.
 
 ---
 

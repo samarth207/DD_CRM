@@ -77,6 +77,47 @@ function dismissAdminUpdateNotification() {
   adminLastCheckTimestamp = Date.now();
 }
 
+// Calculate time elapsed in days
+function formatTimeSince(dateString) {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = now - date;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'N/A';
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return '1 day';
+  
+  return `${diffDays} days`;
+}
+
+// Get the date of last activity (status change or note added)
+function getLastActivityDate(lead) {
+  let lastActivity = null;
+  
+  // Check status history for last status change
+  if (lead.statusHistory && lead.statusHistory.length > 0) {
+    const lastStatusChange = lead.statusHistory[lead.statusHistory.length - 1];
+    if (lastStatusChange.changedAt) {
+      lastActivity = new Date(lastStatusChange.changedAt);
+    }
+  }
+  
+  // Check notes for last note added
+  if (lead.notes && lead.notes.length > 0) {
+    const lastNote = lead.notes[lead.notes.length - 1];
+    if (lastNote.createdAt) {
+      const noteDate = new Date(lastNote.createdAt);
+      if (!lastActivity || noteDate > lastActivity) {
+        lastActivity = noteDate;
+      }
+    }
+  }
+  
+  return lastActivity;
+}
+
 // Refresh admin data
 async function refreshAdminData() {
   dismissAdminUpdateNotification();
@@ -852,7 +893,7 @@ function renderUserLeadsTable(leads) {
   if (totalElem) totalElem.textContent = filteredUserLeadsData.length;
   
   if (filteredUserLeadsData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
     updateUserPaginationControls();
     return;
   }
@@ -873,6 +914,11 @@ function renderUserLeadsTable(leads) {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.onclick = () => openLeadModal(lead.id);
+    
+    const leadAge = formatTimeSince(lead.createdAt);
+    const lastActivityDate = getLastActivityDate(lead);
+    const lastActivityStr = lastActivityDate ? formatTimeSince(lastActivityDate) : 'No activity';
+    
     tr.innerHTML = `
       <td>${lead.name || ''}</td>
       <td>${lead.contact || ''}</td>
@@ -883,6 +929,8 @@ function renderUserLeadsTable(leads) {
       <td>${lead.profession || 'N/A'}</td>
       <td>${lead.source || 'Other'}</td>
       <td><span class="lead-status status-${(lead.status||'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}">${lead.status || ''}</span></td>
+      <td style="color: #6366f1; font-size: 12px;" title="Days since lead was added">${leadAge}</td>
+      <td style="color: #10b981; font-size: 12px;" title="Days since last status change or note">${lastActivityStr}</td>
       <td>${lead.updatedAt ? new Date(lead.updatedAt).toLocaleDateString() : ''}</td>
     `;
     tbody.appendChild(tr);
@@ -3995,6 +4043,9 @@ function renderAllLeads() {
   // Store filtered data for pagination
   filteredLeadsData = filteredLeads;
   
+  // Sort by createdAt descending (newest first)
+  filteredLeadsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  
   // Reset to page 1 when filters change
   currentPage = 1;
   
@@ -4251,7 +4302,7 @@ function renderPaginatedLeads() {
   }
 
   if (filteredLeadsData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px; color: #9ca3af;">No leads found</td></tr>';
     updatePaginationControls();
     return;
   }
@@ -4272,6 +4323,9 @@ function renderPaginatedLeads() {
     tr.onclick = () => viewLeadDetail(lead._id);
     
     const isSelected = selectedLeadIds.includes(lead._id);
+    const leadAge = formatTimeSince(lead.createdAt);
+    const lastActivityDate = getLastActivityDate(lead);
+    const lastActivityStr = lastActivityDate ? formatTimeSince(lastActivityDate) : 'No activity';
     
     tr.innerHTML = `
       <td onclick="event.stopPropagation();"><input type="checkbox" class="lead-checkbox" data-lead-id="${lead._id}" ${isSelected ? 'checked' : ''} onchange="toggleLeadSelection('${lead._id}')"></td>
@@ -4282,6 +4336,8 @@ function renderPaginatedLeads() {
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.source || 'Other'}">${lead.source || 'Other'}</td>
       <td><span class="status-badge status-${lead.status ? lead.status.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-') : 'unknown'}">${lead.status || 'Unknown'}</span></td>
       <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}">${lead.assignedTo ? lead.assignedTo.name : 'Unassigned'}</td>
+      <td style="color: #6366f1; font-size: 12px;" title="Days since lead was added">${leadAge}</td>
+      <td style="color: #10b981; font-size: 12px;" title="Days since last status change or note">${lastActivityStr}</td>
       <td>${new Date(lead.updatedAt).toLocaleDateString()}</td>
     `;
     
